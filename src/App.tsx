@@ -534,9 +534,11 @@ function IntegrationPage() {
           En <strong>desarrollo</strong>, las llamadas a HikCentral van por{' '}
           <code className="inline-code">/hikcentral-proxy/*</code> (proxy en Vite; también{' '}
           <code className="inline-code">/__hik</code> y <code className="inline-code">/hik</code>) →{' '}
-          <code className="inline-code">VITE_APP_HIKCENTRAL_BASE_URL</code>). En producción necesitas el
-          mismo tipo de proxy o CORS en el servidor. La prueba de conexión hace GET a la raíz de cada
-          URL.
+          <code className="inline-code">VITE_APP_HIK_PROXY_TARGET</code> si está definida, si no{' '}
+          <code className="inline-code">VITE_APP_HIKCENTRAL_BASE_URL</code>. La prueba de conexión usa
+          ese mismo proxy cuando la URL coincide con esa base (evita &quot;Failed to fetch&quot; por
+          certificado HTTPS en el navegador). Si el dispositivo apunta a otro host que no es el del
+          proxy, el GET sigue siendo directo y puede fallar por CORS o TLS.
         </p>
         <button type="button" className="btn primary" disabled={loading} onClick={() => void test()}>
           {loading ? 'Probando…' : 'Probar conexiones'}

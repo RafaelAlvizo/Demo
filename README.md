@@ -1,4 +1,17 @@
-# React + TypeScript + Vite
+# TORAM (demo) — React + TypeScript + Vite
+
+## Arranque
+
+En la carpeta del proyecto, **siempre** tras clonar o actualizar el código:
+
+```bash
+npm install
+npm run dev
+```
+
+Si ves `Failed to resolve import "crypto-js"`, falta ejecutar **`npm install`** (o tu `package.json` está desactualizado respecto a Git).
+
+---
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

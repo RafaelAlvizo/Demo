@@ -8,7 +8,8 @@
    `VITE_APP_HIK_PROXY_TARGET` o `VITE_APP_HIKCENTRAL_BASE_URL`, quitando el prefijo `/hikcentral-proxy`.  
    Ejemplo: `https://127.0.0.1/artemis/api/resource/v1/person/single/add`
 3. Eso evita **CORS** en desarrollo. **Solo existe con `npm run dev`**.
-4. **Autenticación Artemis** (`src/api/artemisAuth.ts`): HikCentral OpenAPI espera cabeceras **X-Ca-Key**, **X-Ca-Signature** (HMAC-SHA256), **Content-MD5**, **X-Ca-Timestamp**, **X-Ca-Nonce**, no `X-App-Key` plano. Las variables `VITE_APP_HIKCENTRAL_APP_KEY` / `SECRET` son ese par de Artemis.
+4. **Prueba “Probar conexiones”** (`runConnectionTests`): en dev, si la URL a pinguear es **la misma** base que `VITE_APP_HIK_PROXY_TARGET` o `VITE_APP_HIKCENTRAL_BASE_URL`, el GET va por `/hikcentral-proxy/` (no directo al `https://127.0.0.1`), para no chocar con **certificado autofirmado** ni bloqueos del navegador (“Failed to fetch”).
+5. **Autenticación Artemis** (`src/api/artemisAuth.ts`): HikCentral OpenAPI espera cabeceras **X-Ca-Key**, **X-Ca-Signature** (HMAC-SHA256), **Content-MD5**, **X-Ca-Timestamp**, **X-Ca-Nonce**, no `X-App-Key` plano. Las variables `VITE_APP_HIKCENTRAL_APP_KEY` / `SECRET` son ese par de Artemis.
 
 ## Mismo ordenador: VS Code + HikCentral local
 
@@ -23,6 +24,8 @@ Suele ser respuesta **nginx** del propio HikCentral: el proxy de Vite **sí lleg
 - Módulo **OpenAPI / integración de terceros** no instalado o no licenciado.
 - **Ruta distinta** en tu versión: ajusta `VITE_APP_HIK_ENDPOINT_PERSON_ADD` según el PDF oficial de **tu** versión.
 - **Puerto o protocolo** incorrectos en `VITE_APP_HIKCENTRAL_BASE_URL` (probar con el mismo host/puerto que en el navegador).
+
+**Comprobar fuera de la app (misma máquina):** abre en el navegador o prueba con `curl` la misma base que en `.env.local`. Si `https://127.0.0.1/artemis/...` no existe o da 502 sin TORAM, el problema es el servidor HikCentral, no el demo.
 
 Tras el cambio a firma Artemis, si había **401/403** por auth, debería mejorar; el **502** puro sigue siendo sobre todo **URL/servicio** en el servidor.
 

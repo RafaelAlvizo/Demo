@@ -65,6 +65,23 @@ function parseJsonSafe(text: string): unknown {
   }
 }
 
+/** Evita mostrar páginas HTML de nginx (502, etc.) en el toast; da un texto útil. */
+function humanizeHttpErrorBody(status: number, text: string): string {
+  const t = text.trim()
+  const looksHtml = t.startsWith('<') || /<html[\s>]|<!DOCTYPE/i.test(t)
+  if (!looksHtml) return t.slice(0, 500)
+
+  if (status === 502) {
+    return [
+      '502 Bad Gateway: el host de HikCentral respondió, pero su proxy interno no llegó al servicio OpenAPI/Artemis.',
+      import.meta.env.DEV
+        ? 'Revisa .env.local: VITE_APP_HIKCENTRAL_BASE_URL (mismo protocolo/host/puerto que el cliente web), que OpenAPI esté instalado y licenciado, y reinicia npm run dev. Opcional: VITE_APP_HIK_PROXY_TARGET si el destino del proxy debe ser distinto.'
+        : 'En producción no existe el proxy de Vite; necesitas mismo origen o CORS y URL correcta del gateway.',
+    ].join(' ')
+  }
+  return `HTTP ${status}: el cuerpo es HTML (página de error del servidor). Revisa la URL base y el estado de HikCentral/OpenAPI.`
+}
+
 function extractPersonId(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null
   const o = body as Record<string, unknown>
@@ -223,7 +240,7 @@ export async function syncVisitorToHikCentral(args: {
   const json = parseJsonSafe(text)
 
   if (!res.ok) {
-    throw new Error(`HikCentral persona: HTTP ${res.status} — ${text.slice(0, 400)}`)
+    throw new Error(`HikCentral persona: HTTP ${res.status} — ${humanizeHttpErrorBody(res.status, text)}`)
   }
 
   if (json && typeof json === 'object' && !isApiSuccess(json)) {
@@ -260,7 +277,9 @@ export async function syncVisitorToHikCentral(args: {
     const aText = await aRes.text()
     const aJson = parseJsonSafe(aText)
     if (!aRes.ok) {
-      throw new Error(`HikCentral nivel de acceso: HTTP ${aRes.status} — ${aText.slice(0, 400)}`)
+      throw new Error(
+        `HikCentral nivel de acceso: HTTP ${aRes.status} — ${humanizeHttpErrorBody(aRes.status, aText)}`,
+      )
     }
     if (aJson && typeof aJson === 'object' && !isApiSuccess(aJson)) {
       throw new Error(`HikCentral nivel de acceso: ${aText.slice(0, 500)}`)
