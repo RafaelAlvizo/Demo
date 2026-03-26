@@ -4,6 +4,8 @@ interface ImportMetaEnv {
   readonly VITE_APP_NAME: string
   readonly VITE_APP_HIK_DEVICE_BASE_URL: string
   readonly VITE_APP_HIKCENTRAL_BASE_URL: string
+  /** Solo dev: destino del proxy Vite si debe diferir de VITE_APP_HIKCENTRAL_BASE_URL */
+  readonly VITE_APP_HIK_PROXY_TARGET: string
   readonly VITE_APP_HIKCENTRAL_APP_KEY: string
   readonly VITE_APP_HIKCENTRAL_APP_SECRET: string
   readonly VITE_APP_API_MODE: 'mock' | 'real' | string
