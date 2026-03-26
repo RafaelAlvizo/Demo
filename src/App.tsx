@@ -390,7 +390,7 @@ function Wizard() {
               <p className="step-hint">
                 Sin cobro real. Con <code className="inline-code">VITE_APP_API_MODE=real</code> se
                 envía la persona a HikCentral (necesitas org y niveles en .env; el proxy{' '}
-                <code className="inline-code">/__hik</code> solo en desarrollo).
+                <code className="inline-code">/hikcentral-proxy</code> solo en desarrollo).
               </p>
               {!selectedTier && <p className="warn-banner">Elige un nivel antes.</p>}
 
@@ -532,7 +532,8 @@ function IntegrationPage() {
         <h1>Integración</h1>
         <p className="step-hint">
           En <strong>desarrollo</strong>, las llamadas a HikCentral van por{' '}
-          <code className="inline-code">/__hik/*</code> (proxy en Vite →{' '}
+          <code className="inline-code">/hikcentral-proxy/*</code> (proxy en Vite; también{' '}
+          <code className="inline-code">/__hik</code> y <code className="inline-code">/hik</code>) →{' '}
           <code className="inline-code">VITE_APP_HIKCENTRAL_BASE_URL</code>). En producción necesitas el
           mismo tipo de proxy o CORS en el servidor. La prueba de conexión hace GET a la raíz de cada
           URL.

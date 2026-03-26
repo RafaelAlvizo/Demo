@@ -1,6 +1,11 @@
-/** En desarrollo, las peticiones van a /__hik/* y Vite las reenvía al servidor (evita CORS). */
+/**
+ * En desarrollo, las peticiones van a este prefijo y Vite las reenvía a HikCentral (evita CORS).
+ * Debe coincidir con una entrada en vite.config.ts → server.proxy.
+ */
+export const HIK_DEV_PROXY_PREFIX = '/hikcentral-proxy'
+
 export function hikCentralApiOrigin(): string {
-  if (import.meta.env.DEV) return '/__hik'
+  if (import.meta.env.DEV) return HIK_DEV_PROXY_PREFIX
   return (import.meta.env.VITE_APP_HIKCENTRAL_BASE_URL ?? '').replace(/\/$/, '')
 }
 
