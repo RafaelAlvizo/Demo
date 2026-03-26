@@ -1,4 +1,5 @@
 import type { GuestData, Tier } from '../types'
+import { buildArtemisHeaders } from './artemisAuth'
 import { hikEndpoint } from './config'
 import { getApiMode } from './envMode'
 
@@ -54,15 +55,6 @@ function effectivePeriod(visitDate: string): { beginTime: string; endTime: strin
   end.setHours(23, 59, 59, 999)
   const iso = (d: Date) => d.toISOString()
   return { beginTime: iso(start), endTime: iso(end) }
-}
-
-function authHeaders(): Record<string, string> {
-  const key = import.meta.env.VITE_APP_HIKCENTRAL_APP_KEY ?? ''
-  const secret = import.meta.env.VITE_APP_HIKCENTRAL_APP_SECRET ?? ''
-  const h: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (key) h['X-App-Key'] = key
-  if (secret) h['X-App-Secret'] = secret
-  return h
 }
 
 function parseJsonSafe(text: string): unknown {
@@ -214,11 +206,16 @@ export async function syncVisitorToHikCentral(args: {
     import.meta.env.VITE_APP_HIK_ENDPOINT_PERSON_ADD ??
     '/artemis/api/resource/v1/person/single/add'
 
+  const personBodyStr = JSON.stringify(snap.personBody)
+  const appKey = import.meta.env.VITE_APP_HIKCENTRAL_APP_KEY ?? ''
+  const appSecret = import.meta.env.VITE_APP_HIKCENTRAL_APP_SECRET ?? ''
+  const personHeaders = await buildArtemisHeaders('POST', personPath, personBodyStr, appKey, appSecret)
+
   const url = hikEndpoint(personPath)
   const res = await fetch(url, {
     method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(snap.personBody),
+    headers: personHeaders,
+    body: personBodyStr,
     signal: AbortSignal.timeout(60_000),
   })
 
@@ -250,11 +247,14 @@ export async function syncVisitorToHikCentral(args: {
       personCode: snap.personCode,
       accessLevelIndexCode: accessIndex,
     }
+    const accessBodyStr = JSON.stringify(accessBody)
+    const accessHeaders = await buildArtemisHeaders('POST', accessPath, accessBodyStr, appKey, appSecret)
+
     const aUrl = hikEndpoint(accessPath)
     const aRes = await fetch(aUrl, {
       method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(accessBody),
+      headers: accessHeaders,
+      body: accessBodyStr,
       signal: AbortSignal.timeout(60_000),
     })
     const aText = await aRes.text()
