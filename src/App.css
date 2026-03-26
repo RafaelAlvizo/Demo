@@ -54,6 +54,29 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
+  align-items: center;
+}
+
+.api-mode-pill {
+  margin-left: 0.35rem;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.api-mode-pill.real {
+  border-color: rgba(52, 211, 153, 0.5);
+  color: #6ee7b7;
+}
+
+.api-mode-pill.mock {
+  border-color: rgba(251, 191, 36, 0.45);
+  color: #fcd34d;
 }
 
 .nav-link {

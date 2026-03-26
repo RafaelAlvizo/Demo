@@ -1,7 +1,6 @@
 import type { GuestData, Tier } from '../types'
 import { hikEndpoint } from './config'
-
-const API_MODE = import.meta.env.VITE_APP_API_MODE ?? 'mock'
+import { getApiMode } from './envMode'
 
 export type AccessLevelLabel = 'basico' | 'premium' | 'VIP'
 
@@ -192,7 +191,7 @@ export async function syncVisitorToHikCentral(args: {
   const snap = buildToramSyncSnapshot(args)
   const orgIndexCode = import.meta.env.VITE_APP_HIK_ORG_INDEX_CODE ?? ''
 
-  if (API_MODE === 'mock') {
+  if (getApiMode() === 'mock') {
     await delay(500)
     return {
       ok: true,

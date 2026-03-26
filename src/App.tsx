@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { getApiMode, getApiModeRaw } from './api/envMode'
 import { syncVisitorToHikCentral, tierToAccessLabel } from './api/hikcentral'
 import {
   generateTransactionId,
@@ -20,6 +21,7 @@ function mask(s: string): string {
 
 function Header() {
   const { view, setView } = useToram()
+  const mode = getApiMode()
   return (
     <header className="app-header">
       <button type="button" className="brand" onClick={() => setView('landing')}>
@@ -50,6 +52,9 @@ function Header() {
         >
           Integración
         </button>
+        <span className={`api-mode-pill ${mode}`} title="Tras cambiar .env.local, reinicia npm run dev">
+          API: {mode}
+        </span>
       </nav>
     </header>
   )
@@ -504,7 +509,8 @@ function IntegrationPage() {
   const hikBase = import.meta.env.VITE_APP_HIKCENTRAL_BASE_URL ?? ''
   const appKey = import.meta.env.VITE_APP_HIKCENTRAL_APP_KEY ?? ''
   const appSecret = import.meta.env.VITE_APP_HIKCENTRAL_APP_SECRET ?? ''
-  const apiMode = import.meta.env.VITE_APP_API_MODE ?? 'mock'
+  const apiMode = getApiMode()
+  const apiModeRaw = getApiModeRaw()
   const orgIndex = import.meta.env.VITE_APP_HIK_ORG_INDEX_CODE ?? ''
   const accB = import.meta.env.VITE_APP_HIK_ACCESS_BASE ?? ''
   const accP = import.meta.env.VITE_APP_HIK_ACCESS_PREMIUM ?? ''
@@ -570,9 +576,10 @@ function IntegrationPage() {
             <dd className="mono">{appSecret ? mask(appSecret) : '—'}</dd>
           </div>
           <div>
-            <dt>VITE_APP_API_MODE</dt>
+            <dt>VITE_APP_API_MODE (efectivo / crudo)</dt>
             <dd>
               <span className="badge">{apiMode}</span>
+              <span className="muted small"> — variable en bundle: {apiModeRaw}</span>
             </dd>
           </div>
           <div>

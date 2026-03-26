@@ -1,4 +1,5 @@
 import type { Tier } from '../types'
+import { getApiMode } from './envMode'
 
 function randomSegment(len: number): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -41,7 +42,7 @@ export async function pingUrl(url: string): Promise<string> {
 }
 
 export async function runConnectionTests(): Promise<{ device: string; hik: string }> {
-  const mode = import.meta.env.VITE_APP_API_MODE ?? 'mock'
+  const mode = getApiMode()
   const device = import.meta.env.VITE_APP_HIK_DEVICE_BASE_URL ?? ''
   const hik = import.meta.env.VITE_APP_HIKCENTRAL_BASE_URL ?? ''
 
