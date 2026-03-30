@@ -8,6 +8,12 @@ import {
 } from './api/artemisClient'
 import { getApiMode, getApiModeRaw } from './api/envMode'
 import { runConnectionTests } from './api/mock'
+import {
+  buildSyscomPostmanReferenceForm,
+  isSyscomPostmanReferenceForm,
+  SYSCOM_POSTMAN_BEGIN_ISO,
+  SYSCOM_POSTMAN_END_ISO,
+} from './reference/syscomPostmanPerson'
 import { emptyPersonForm, type PersonFormState } from './types'
 import './App.css'
 
@@ -159,10 +165,14 @@ function buildPersonPayload(form: PersonFormState): Record<string, unknown> {
     base.cards = [{ cardNo: card.slice(0, 20) }]
   }
   if (form.beginTime.trim()) {
-    base.beginTime = formatDateTimeForHikAccess(form.beginTime)
+    base.beginTime = isSyscomPostmanReferenceForm(form)
+      ? SYSCOM_POSTMAN_BEGIN_ISO
+      : formatDateTimeForHikAccess(form.beginTime)
   }
   if (form.endTime.trim()) {
-    base.endTime = formatDateTimeForHikAccess(form.endTime)
+    base.endTime = isSyscomPostmanReferenceForm(form)
+      ? SYSCOM_POSTMAN_END_ISO
+      : formatDateTimeForHikAccess(form.endTime)
   }
   if (import.meta.env.VITE_APP_HIK_OMIT_PERSON_NAME !== 'true') {
     base.personName = `${given} ${family}`.trim()
@@ -492,13 +502,30 @@ export default function App() {
               className="btn primary"
               disabled={!!busy}
               onClick={() => {
+                setPersonForm(buildSyscomPostmanReferenceForm(personForm.orgIndexCode || defaultOrg))
+                setPersonIdAutofillNote(null)
+              }}
+            >
+              Autollenar (ejemplo Postman / SYSCOM)
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={!!busy}
+              onClick={() => {
                 setPersonForm(buildDemoPersonForm(personForm.orgIndexCode || defaultOrg))
                 setPersonIdAutofillNote(null)
               }}
             >
-              Autollenar todo (demo) → luego Crear persona
+              Autollenar datos aleatorios
             </button>
           </div>
+          <p className="muted small" style={{ marginBottom: '0.75rem' }}>
+            La plantilla fija vive en{' '}
+            <code className="inline-code">src/reference/syscomPostmanPerson.ts</code>. No incluye{' '}
+            <code className="inline-code">faces</code> (JPEG en base64): úsalo en{' '}
+            <code className="inline-code">VITE_APP_HIK_PERSON_EXTRA_JSON</code> si tu servidor lo exige.
+          </p>
           <div className="field-row">
             <div className="field grow">
               <label htmlFor="personCode">personCode</label>
