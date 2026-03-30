@@ -161,14 +161,54 @@ export async function postArtemis(path: string, body: Record<string, unknown>): 
   return { ok: true, status: res.status, json, text }
 }
 
+function coerceId(v: unknown): string | null {
+  if (typeof v === 'string' && v.trim()) return v.trim()
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+  return null
+}
+
+/**
+ * Busca personId bajo `data` pero **no** entra en la propiedad `list` (evita confundir un listado de personas con el alta).
+ */
+function findInObjectSkipList(obj: Record<string, unknown>, depth: number): string | null {
+  if (depth > 8) return null
+  const direct = coerceId(obj.personId)
+  if (direct) return direct
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === 'list') continue
+    const found = walkJsonForPersonId(v, depth + 1)
+    if (found) return found
+  }
+  return null
+}
+
+function walkJsonForPersonId(v: unknown, depth: number): string | null {
+  if (depth > 8) return null
+  if (Array.isArray(v)) {
+    for (const item of v) {
+      const found = walkJsonForPersonId(item, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+  if (v && typeof v === 'object') {
+    return findInObjectSkipList(v as Record<string, unknown>, depth + 1)
+  }
+  return null
+}
+
+/** personId devuelto por POST person/single/add (acepta string o número). */
 export function extractPersonIdFromAddResponse(json: unknown): string | null {
   if (!json || typeof json !== 'object') return null
   const o = json as Record<string, unknown>
+  const top = coerceId(o.personId)
+  if (top) return top
+
   const data = o.data
-  if (data && typeof data === 'object') {
-    const d = data as Record<string, unknown>
-    if (typeof d.personId === 'string') return d.personId
+  const plain = coerceId(data)
+  if (plain) return plain
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return findInObjectSkipList(data as Record<string, unknown>, 0)
   }
-  if (typeof o.personId === 'string') return o.personId
   return null
 }

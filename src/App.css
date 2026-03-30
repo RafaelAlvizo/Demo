@@ -687,3 +687,8 @@
 .tester-response .error-banner {
   margin-bottom: 0.75rem;
 }
+
+.personid-hint {
+  margin: 0.35rem 0 0;
+  color: #6ee7b7;
+}

@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import {
   extractPersonIdFromAddResponse,
   HIK_ARTEMIS_PATHS,
+  type ArtemisPostResult,
   postArtemis,
 } from './api/artemisClient'
 import { getApiMode, getApiModeRaw } from './api/envMode'
@@ -80,6 +81,8 @@ export default function App() {
 
   const [lastResult, setLastResult] = useState<string | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
+  const [lastApiJson, setLastApiJson] = useState<unknown>(null)
+  const [personIdAutofillNote, setPersonIdAutofillNote] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [pingLines, setPingLines] = useState<{ device: string; hik: string } | null>(null)
 
@@ -113,9 +116,21 @@ export default function App() {
     [],
   )
 
-  const setResult = (r: Awaited<ReturnType<typeof postArtemis>>) => {
+  const applyResultToState = (r: ArtemisPostResult) => {
+    setLastApiJson(r.json ?? null)
     setLastResult(prettyJson(r.json ?? r.text))
     if (!r.ok && r.errorMessage) setLastError(r.errorMessage)
+  }
+
+  const fillPersonIdFromLastResponse = () => {
+    const pid = extractPersonIdFromAddResponse(lastApiJson)
+    if (pid) {
+      setLastPersonId(pid)
+      setPersonIdAutofillNote(`PersonId tomado de la última respuesta: ${pid}`)
+      setLastError(null)
+    } else {
+      setLastError('No hay personId reconocible en la última respuesta. Revisa el JSON abajo.')
+    }
   }
 
   return (
@@ -226,7 +241,7 @@ export default function App() {
               onClick={() =>
                 void run('org', async () => {
                   const r = await postArtemis(HIK_ARTEMIS_PATHS.orgList, { pageNo: 1, pageSize: 100 })
-                  setResult(r)
+                  applyResultToState(r)
                 })
               }
             >
@@ -239,7 +254,7 @@ export default function App() {
               onClick={() =>
                 void run('priv', async () => {
                   const r = await postArtemis(HIK_ARTEMIS_PATHS.privilegeGroupList, {})
-                  setResult(r)
+                  applyResultToState(r)
                 })
               }
             >
@@ -256,7 +271,7 @@ export default function App() {
                     pageSize: 10,
                     vehicleGroupIndexCode: '0',
                   })
-                  setResult(r)
+                  applyResultToState(r)
                 })
               }
             >
@@ -292,7 +307,7 @@ export default function App() {
               onClick={() =>
                 void run('persons', async () => {
                   const r = await postArtemis(HIK_ARTEMIS_PATHS.personList, { pageNo, pageSize })
-                  setResult(r)
+                  applyResultToState(r)
                 })
               }
             >
@@ -443,10 +458,18 @@ export default function App() {
                   }
                   const payload = buildPersonPayload(personForm)
                   const r = await postArtemis(HIK_ARTEMIS_PATHS.personAdd, payload)
-                  setResult(r)
+                  setPersonIdAutofillNote(null)
+                  applyResultToState(r)
                   if (r.ok && r.json) {
                     const pid = extractPersonIdFromAddResponse(r.json)
-                    if (pid) setLastPersonId(pid)
+                    if (pid) {
+                      setLastPersonId(pid)
+                      setPersonIdAutofillNote(`Listo para asignar grupo — personId: ${pid}`)
+                    } else {
+                      setPersonIdAutofillNote(
+                        'Alta correcta, pero no se detectó personId en la respuesta. Pulsa «Rellenar desde última respuesta» o cópialo del JSON.',
+                      )
+                    }
                   }
                 })
               }
@@ -490,9 +513,27 @@ export default function App() {
               id="pid"
               className="mono"
               value={lastPersonId}
-              onChange={(e) => setLastPersonId(e.target.value)}
-              placeholder="Se rellena tras crear persona con éxito"
+              onChange={(e) => {
+                setLastPersonId(e.target.value)
+                setPersonIdAutofillNote(null)
+              }}
+              placeholder="Se rellena solo al crear persona o con el botón de abajo"
             />
+            {personIdAutofillNote && (
+              <p className="muted small personid-hint" role="status">
+                {personIdAutofillNote}
+              </p>
+            )}
+            <div className="field-row" style={{ marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={!lastResult}
+                onClick={() => fillPersonIdFromLastResponse()}
+              >
+                Rellenar personId desde última respuesta
+              </button>
+            </div>
           </div>
           <div className="form-actions">
             <button
@@ -506,7 +547,7 @@ export default function App() {
                     type: privilegeType,
                     list: [{ id: lastPersonId.trim() }],
                   })
-                  setResult(r)
+                  applyResultToState(r)
                 })
               }
             >
