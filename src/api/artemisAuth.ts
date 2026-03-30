@@ -1,16 +1,18 @@
-import CryptoJS from 'crypto-js'
-
 /**
- * Firma tipo HikCentral OpenAPI / Artemis (documentación tpp.hikvision.com).
- * No usar X-App-Key: la plataforma espera X-Ca-Key + X-Ca-Signature (HMAC-SHA256).
- * @see stringToSign en guías oficiales: método, Content-MD5, Content-Type, key, nonce, timestamp, urlEndpoint (sin prefijo /artemis)
+ * Firma Artemis / HikCentral Open API (mismo patrón que iSecure Center / documentación Hikvision).
+ *
+ * No usar Content-MD5 ni la línea appKey+nonce+timestamp suelta: el gateway calcula con:
+ *   METHOD + "\n" + Accept + "\n" + Content-Type + "\n"
+ *   + "x-ca-key:" + appKey + "\n"
+ *   + "x-ca-nonce:" + nonce + "\n"
+ *   + "x-ca-timestamp:" + ms + "\n"
+ *   + ruta completa (debe incluir /artemis/...)
+ *
+ * @see patrones en integraciones oficiales (Accept comodín, Content-Type application/json, cabeceras x-ca-* en el stringToSign).
  */
-const CONTENT_TYPE = 'application/json;charset=UTF-8'
-
-function contentMd5Base64(body: string): string {
-  const md = CryptoJS.MD5(CryptoJS.enc.Utf8.parse(body))
-  return CryptoJS.enc.Base64.stringify(md)
-}
+const ACCEPT = '*/*'
+/** Debe coincidir exactamente con la cabecera Content-Type enviada y la 3ª línea del stringToSign. */
+const CONTENT_TYPE = 'application/json'
 
 function bufferToBase64(buf: ArrayBuffer): string {
   const u = new Uint8Array(buf)
@@ -19,17 +21,16 @@ function bufferToBase64(buf: ArrayBuffer): string {
   return btoa(binary)
 }
 
-/** Ruta para firmar: /artemis/api/... → /api/... */
-function signaturePath(artemisPath: string): string {
+/** Ruta tal como va en la URL: /artemis/api/... (no quitar el prefijo /artemis para firmar). */
+function normalizeArtemisPath(artemisPath: string): string {
   const p = artemisPath.startsWith('/') ? artemisPath : `/${artemisPath}`
-  if (p.startsWith('/artemis')) return p.slice('/artemis'.length) || '/'
   return p
 }
 
 export async function buildArtemisHeaders(
   method: string,
   artemisPath: string,
-  bodyString: string,
+  _bodyString: string,
   appKey: string,
   appSecret: string,
 ): Promise<Record<string, string>> {
@@ -39,19 +40,18 @@ export async function buildArtemisHeaders(
     )
   }
 
-  const contentMD5 = contentMd5Base64(bodyString)
+  const pathForSign = normalizeArtemisPath(artemisPath)
   const xCaNonce = crypto.randomUUID()
   const xCaTimestamp = String(Date.now())
-  const urlEndpoint = signaturePath(artemisPath)
 
   const stringToSign = [
     method.toUpperCase(),
-    contentMD5,
+    ACCEPT,
     CONTENT_TYPE,
-    appKey,
-    xCaNonce,
-    xCaTimestamp,
-    urlEndpoint,
+    `x-ca-key:${appKey}`,
+    `x-ca-nonce:${xCaNonce}`,
+    `x-ca-timestamp:${xCaTimestamp}`,
+    pathForSign,
   ].join('\n')
 
   const enc = new TextEncoder()
@@ -66,13 +66,12 @@ export async function buildArtemisHeaders(
   const signature = bufferToBase64(sigBuf)
 
   return {
-    Accept: 'application/json',
+    Accept: ACCEPT,
     'Content-Type': CONTENT_TYPE,
-    'Content-MD5': contentMD5,
-    'X-Ca-Key': appKey,
-    'X-Ca-Signature': signature,
-    'X-Ca-Timestamp': xCaTimestamp,
-    'X-Ca-Nonce': xCaNonce,
-    'X-Ca-Signature-Headers': 'X-Ca-Key,X-Ca-Timestamp',
+    'x-ca-key': appKey,
+    'x-ca-signature': signature,
+    'x-ca-timestamp': xCaTimestamp,
+    'x-ca-nonce': xCaNonce,
+    'x-ca-signature-headers': 'x-ca-key,x-ca-nonce,x-ca-timestamp',
   }
 }
