@@ -78,8 +78,13 @@ function mockResponse(path: string, body: unknown): unknown {
     }
   }
   if (path.includes('person/single/add')) {
+    const raw = b.personCode
     const code =
-      typeof b.personCode === 'string' ? b.personCode : `MOCK-${Math.random().toString(36).slice(2, 8)}`
+      typeof raw === 'string'
+        ? raw
+        : typeof raw === 'number'
+          ? String(raw)
+          : `MOCK-${Math.random().toString(36).slice(2, 8)}`
     return { code: '0', msg: 'Success (mock)', data: { personId: `MOCK-${code}`, personCode: code } }
   }
   if (path.includes('person/single/delete')) {
