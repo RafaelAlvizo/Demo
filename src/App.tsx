@@ -295,7 +295,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={tab === 'demo' ? 'app demo-theme' : 'app'}>
       <header className="app-header">
         <div className="brand" style={{ cursor: 'default' }}>
           <span className="brand-mark" aria-hidden>
