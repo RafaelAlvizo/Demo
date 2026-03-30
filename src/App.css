@@ -632,3 +632,58 @@
   word-break: break-word;
   color: var(--text-muted);
 }
+
+.tester-main {
+  max-width: 920px;
+}
+
+.tester-lede {
+  margin: 0 0 1.25rem;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.tester-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.field-row.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .field-row.two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field.grow {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.field.compact input {
+  max-width: 6rem;
+}
+
+.tester-pre {
+  max-height: 24rem;
+  overflow-y: auto;
+}
+
+.tester-response .error-banner {
+  margin-bottom: 0.75rem;
+}

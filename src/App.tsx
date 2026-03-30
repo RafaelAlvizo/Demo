@@ -1,627 +1,536 @@
-import { useState, type FormEvent } from 'react'
-import { getApiMode, getApiModeRaw } from './api/envMode'
-import { syncVisitorToHikCentral, tierToAccessLabel } from './api/hikcentral'
+import { useCallback, useMemo, useState } from 'react'
 import {
-  generateTransactionId,
-  generateWristbandCode,
-  runConnectionTests,
-  simulatePayment,
-} from './api/mock'
-import { ToramProvider, useToram } from './context/ToramContext'
-import { DEMO_TIER_ID, getDemoGuestForToday } from './demo/demoVisitor'
-import { TIERS } from './types'
+  extractPersonIdFromAddResponse,
+  HIK_ARTEMIS_PATHS,
+  postArtemis,
+} from './api/artemisClient'
+import { getApiMode, getApiModeRaw } from './api/envMode'
+import { runConnectionTests } from './api/mock'
+import { emptyPersonForm, type PersonFormState } from './types'
 import './App.css'
 
-const appName = import.meta.env.VITE_APP_NAME ?? 'TORAM'
+const appName = import.meta.env.VITE_APP_NAME ?? 'HikCentral API tester'
 
 function mask(s: string): string {
   if (s.length <= 4) return '••••'
   return `${s.slice(0, 2)}…${s.slice(-2)}`
 }
 
-function Header() {
-  const { view, setView } = useToram()
-  const mode = getApiMode()
-  return (
-    <header className="app-header">
-      <button type="button" className="brand" onClick={() => setView('landing')}>
-        <span className="brand-mark" aria-hidden>
-          ★
-        </span>
-        <span className="brand-text">{appName}</span>
-      </button>
-      <nav className="nav" aria-label="Principal">
-        <button
-          type="button"
-          className={view === 'landing' ? 'nav-link active' : 'nav-link'}
-          onClick={() => setView('landing')}
-        >
-          Inicio
-        </button>
-        <button
-          type="button"
-          className={view === 'wizard' ? 'nav-link active' : 'nav-link'}
-          onClick={() => setView('wizard')}
-        >
-          Registro
-        </button>
-        <button
-          type="button"
-          className={view === 'integration' ? 'nav-link active' : 'nav-link'}
-          onClick={() => setView('integration')}
-        >
-          Integración
-        </button>
-        <span className={`api-mode-pill ${mode}`} title="Tras cambiar .env.local, reinicia npm run dev">
-          API: {mode}
-        </span>
-      </nav>
-    </header>
-  )
+function randomPersonCode(): string {
+  const n = Math.random().toString(36).slice(2, 10).toUpperCase()
+  return `TEST-${n}`
 }
 
-function Landing() {
-  const { startWizard, setView } = useToram()
-  return (
-    <div className="page landing">
-      <section className="hero-card card">
-        <p className="eyebrow">Parque de demostración</p>
-        <h1>Bienvenido a TORAM</h1>
-        <p className="lede">
-          Registro → nivel → pago simulado → pulsera. Sirve para probar el flujo y las URLs de
-          integración.
-        </p>
-        <div className="flow-steps" aria-label="Flujo">
-          <div className="flow-step">
-            <span className="flow-num">1</span>
-            <div>
-              <h2>Registro</h2>
-              <p>Datos del visitante.</p>
-            </div>
-          </div>
-          <div className="flow-step">
-            <span className="flow-num">2</span>
-            <div>
-              <h2>Nivel</h2>
-              <p>Explorador, Aventura u Oro sin límites.</p>
-            </div>
-          </div>
-          <div className="flow-step">
-            <span className="flow-num">3</span>
-            <div>
-              <h2>Pago simulado</h2>
-              <p>Sin cobro real.</p>
-            </div>
-          </div>
-          <div className="flow-step">
-            <span className="flow-num">4</span>
-            <div>
-              <h2>Pulsera</h2>
-              <p>Código WB y datos de acceso (demo).</p>
-            </div>
-          </div>
-        </div>
-        <div className="cta-row">
-          <button type="button" className="btn primary" onClick={startWizard}>
-            Comenzar
-          </button>
-          <button type="button" className="btn ghost" onClick={() => setView('integration')}>
-            Probar conexiones
-          </button>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function isValidEmail(s: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim())
-}
-function isValidPhone(s: string): boolean {
-  const d = s.replace(/\D/g, '')
-  return d.length >= 8 && d.length <= 15
-}
-
-const phases = [
-  { key: 'payment' as const, label: 'Pago simulado…' },
-  { key: 'wristband' as const, label: 'Tarjeta / pulsera…' },
-  { key: 'sync' as const, label: 'Alta en HikCentral…' },
-]
-
-function Wizard() {
-  const {
-    step,
-    setStep,
-    guest,
-    setGuest,
-    selectedTier,
-    setSelectedTierId,
-    payment,
-    setPayment,
-    setView,
-    resetWizard,
-  } = useToram()
-  const [touched, setTouched] = useState(false)
-  const [busy, setBusy] = useState(false)
-
-  const errors: Record<string, string> = {}
-  if (!guest.firstName.trim() || guest.firstName.trim().length < 1) {
-    errors.firstName = 'Nombre requerido.'
+function mergeExtraJson(base: Record<string, unknown>): Record<string, unknown> {
+  const raw = import.meta.env.VITE_APP_HIK_PERSON_EXTRA_JSON
+  if (!raw?.trim()) return base
+  try {
+    const extra = JSON.parse(raw) as Record<string, unknown>
+    return { ...base, ...extra }
+  } catch {
+    return base
   }
-  if (!guest.lastName.trim() || guest.lastName.trim().length < 1) {
-    errors.lastName = 'Apellidos requeridos.'
-  }
-  if (!isValidEmail(guest.email)) errors.email = 'Correo no válido.'
-  if (!isValidPhone(guest.phone)) errors.phone = 'Teléfono no válido.'
-  if (!guest.visitDate) errors.visitDate = 'Elige fecha.'
-
-  const regOk = Object.keys(errors).length === 0
-
-  async function runSimulation() {
-    if (!selectedTier || busy) return
-    setBusy(true)
-    try {
-      setPayment({
-        phase: 'payment',
-        transactionId: null,
-        wristbandCode: null,
-        accessGate: null,
-        validUntil: null,
-        errorMessage: null,
-        hikPersonId: null,
-        hikDetail: null,
-        hikPayloadPreview: null,
-      })
-      await new Promise((r) => setTimeout(r, 350))
-
-      const { transactionId } = await simulatePayment(selectedTier)
-      const wb = generateWristbandCode()
-      setPayment({
-        phase: 'wristband',
-        transactionId,
-        wristbandCode: wb,
-        accessGate: null,
-        validUntil: null,
-        errorMessage: null,
-        hikPersonId: null,
-        hikDetail: null,
-        hikPayloadPreview: null,
-      })
-      await new Promise((r) => setTimeout(r, 400))
-
-      setPayment((p) => ({ ...p, phase: 'sync' }))
-      const sync = await syncVisitorToHikCentral({
-        guest,
-        tier: selectedTier,
-        wristbandCode: wb,
-      })
-      setPayment({
-        phase: 'done',
-        transactionId,
-        wristbandCode: wb,
-        accessGate: sync.accessGate,
-        validUntil: sync.validUntil,
-        errorMessage: sync.ok ? null : 'Aviso: revisar respuesta HikCentral.',
-        hikPersonId: sync.personId,
-        hikDetail: sync.detail,
-        hikPayloadPreview: sync.lastRequestPreview ?? null,
-      })
-      setStep(3)
-    } catch (e) {
-      setPayment({
-        phase: 'error',
-        transactionId: generateTransactionId(),
-        wristbandCode: null,
-        accessGate: null,
-        validUntil: null,
-        errorMessage: e instanceof Error ? e.message : 'Error',
-        hikPersonId: null,
-        hikDetail: null,
-        hikPayloadPreview: null,
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const labels = ['Registro', 'Nivel', 'Pago', 'Listo']
-  const idx = phases.findIndex((p) => p.key === payment.phase)
-  const displayIdx = idx >= 0 ? idx : 0
-
-  return (
-    <div className="page wizard-page">
-      <div className="wizard-shell card">
-        <div className="wizard-header">
-          <p className="eyebrow">Asistente</p>
-          <h1>Registro TORAM</h1>
-          <ol className="stepper" aria-label="Pasos">
-            {labels.map((label, i) => (
-              <li
-                key={label}
-                className={
-                  i === step ? 'stepper-item current' : i < step ? 'stepper-item done' : 'stepper-item'
-                }
-              >
-                <span className="stepper-num">{i + 1}</span>
-                <span className="stepper-label">{label}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-
-        <div className="wizard-body">
-          {step === 0 && (
-            <form
-              className="step-form"
-              onSubmit={(e: FormEvent) => {
-                e.preventDefault()
-                setTouched(true)
-                if (!regOk) return
-                setStep(1)
-              }}
-              noValidate
-            >
-              <h2 className="step-title">Visitante</h2>
-              <p className="step-hint">
-                Persona en departamento Visitas (configura el índice en variables de entorno).
-              </p>
-              <div className="field">
-                <label htmlFor="firstName">Nombre</label>
-                <input
-                  id="firstName"
-                  autoComplete="given-name"
-                  value={guest.firstName}
-                  onChange={(e) => setGuest((g) => ({ ...g, firstName: e.target.value }))}
-                  aria-invalid={touched && !!errors.firstName}
-                />
-                {touched && errors.firstName && <p className="field-error">{errors.firstName}</p>}
-              </div>
-              <div className="field">
-                <label htmlFor="lastName">Apellidos</label>
-                <input
-                  id="lastName"
-                  autoComplete="family-name"
-                  value={guest.lastName}
-                  onChange={(e) => setGuest((g) => ({ ...g, lastName: e.target.value }))}
-                  aria-invalid={touched && !!errors.lastName}
-                />
-                {touched && errors.lastName && <p className="field-error">{errors.lastName}</p>}
-              </div>
-              <div className="field">
-                <label htmlFor="gender">Sexo</label>
-                <select
-                  id="gender"
-                  value={guest.gender}
-                  onChange={(e) =>
-                    setGuest((g) => ({ ...g, gender: e.target.value as 'male' | 'female' }))
-                  }
-                >
-                  <option value="male">Masculino</option>
-                  <option value="female">Femenino</option>
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="email">Correo</label>
-                <input
-                  id="email"
-                  type="email"
-                  value={guest.email}
-                  onChange={(e) => setGuest((g) => ({ ...g, email: e.target.value }))}
-                />
-                {touched && errors.email && <p className="field-error">{errors.email}</p>}
-              </div>
-              <div className="field">
-                <label htmlFor="phone">Teléfono</label>
-                <input
-                  id="phone"
-                  value={guest.phone}
-                  onChange={(e) => setGuest((g) => ({ ...g, phone: e.target.value }))}
-                />
-                {touched && errors.phone && <p className="field-error">{errors.phone}</p>}
-              </div>
-              <div className="field">
-                <label htmlFor="visitDate">Fecha de visita</label>
-                <input
-                  id="visitDate"
-                  type="date"
-                  value={guest.visitDate}
-                  onChange={(e) => setGuest((g) => ({ ...g, visitDate: e.target.value }))}
-                />
-                {touched && errors.visitDate && <p className="field-error">{errors.visitDate}</p>}
-              </div>
-              <div className="form-actions">
-                <button
-                  type="button"
-                  className="btn ghost"
-                  onClick={() => {
-                    setGuest(getDemoGuestForToday())
-                    setSelectedTierId(DEMO_TIER_ID)
-                    setTouched(true)
-                  }}
-                >
-                  Rellenar demo (visitante + nivel Oro/VIP)
-                </button>
-                <button type="submit" className="btn primary">
-                  Continuar
-                </button>
-              </div>
-            </form>
-          )}
-
-          {step === 1 && (
-            <div className="step-tier">
-              <h2 className="step-title">Nivel</h2>
-              <div className="tier-grid">
-                {TIERS.map((tier) => {
-                  const active = selectedTier?.id === tier.id
-                  return (
-                    <button
-                      key={tier.id}
-                      type="button"
-                      className={active ? 'tier-card card active' : 'tier-card card'}
-                      onClick={() => setSelectedTierId(tier.id)}
-                    >
-                      <span className="tier-price">{tier.priceLabel}</span>
-                      <h3>{tier.name}</h3>
-                      <p className="tier-tagline">{tier.tagline}</p>
-                    </button>
-                  )
-                })}
-              </div>
-              <div className="form-actions spread">
-                <button type="button" className="btn ghost" onClick={() => setStep(0)}>
-                  Atrás
-                </button>
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={!selectedTier}
-                  onClick={() => setStep(2)}
-                >
-                  Siguiente
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="step-payment">
-              <h2 className="step-title">Pago y sincronización</h2>
-              <p className="step-hint">
-                Sin cobro real. Con <code className="inline-code">VITE_APP_API_MODE=real</code> se
-                envía la persona a HikCentral (necesitas org y niveles en .env; el proxy{' '}
-                <code className="inline-code">/hikcentral-proxy</code> solo en desarrollo).
-              </p>
-              {!selectedTier && <p className="warn-banner">Elige un nivel antes.</p>}
-
-              <div className="timeline card">
-                {phases.map((p, i) => {
-                  const done = i < displayIdx || payment.phase === 'done'
-                  const active =
-                    busy && i === displayIdx && payment.phase !== 'done' && payment.phase !== 'error'
-                  return (
-                    <div
-                      key={p.key}
-                      className={done ? 'tl-item done' : active ? 'tl-item active' : 'tl-item'}
-                    >
-                      <span className="tl-dot" aria-hidden />
-                      <div>
-                        <p className="tl-label">{p.label}</p>
-                        {active && <div className="tl-bar" aria-hidden />}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {payment.phase === 'error' && (
-                <div className="error-banner" role="alert">
-                  {payment.errorMessage}
-                </div>
-              )}
-
-              <div className="form-actions spread">
-                <button type="button" className="btn ghost" onClick={() => setStep(1)}>
-                  Atrás
-                </button>
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={!selectedTier || busy}
-                  onClick={() => void runSimulation()}
-                >
-                  {busy ? 'Procesando…' : 'Ejecutar simulación'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="step-success">
-              <div className="success-hero card">
-                <p className="eyebrow success">Listo</p>
-                <h2 className="step-title">Pulsera</h2>
-              </div>
-              <div className="detail-grid">
-                <div className="card detail-card">
-                  <h3>Código</h3>
-                  <p className="mono big-code">{payment.wristbandCode ?? '—'}</p>
-                </div>
-                <div className="card detail-card">
-                  <h3>Transacción</h3>
-                  <p className="mono">{payment.transactionId ?? '—'}</p>
-                </div>
-                <div className="card detail-card wide">
-                  <h3>Acceso</h3>
-                  <ul className="detail-list">
-                    <li>
-                      <strong>Visitante:</strong> {guest.firstName} {guest.lastName}
-                    </li>
-                    <li>
-                      <strong>Nivel TORAM:</strong> {selectedTier?.name ?? '—'} (
-                      {selectedTier ? tierToAccessLabel(selectedTier.id) : '—'})
-                    </li>
-                    <li>
-                      <strong>HikCentral (ID persona):</strong> {payment.hikPersonId ?? '—'}
-                    </li>
-                    <li>
-                      <strong>Sincronización:</strong> {payment.hikDetail ?? '—'}
-                    </li>
-                    <li>
-                      <strong>Entrada:</strong> {payment.accessGate ?? '—'}
-                    </li>
-                    <li>
-                      <strong>Validez:</strong> {payment.validUntil ?? '—'}
-                    </li>
-                  </ul>
-                </div>
-              </div>
-              {payment.hikPayloadPreview && (
-                <details className="card payload-preview">
-                  <summary className="payload-summary">
-                    Datos para HikCentral (coinciden con el formulario y con el POST en modo real)
-                  </summary>
-                  <pre className="payload-pre">{payment.hikPayloadPreview}</pre>
-                </details>
-              )}
-              <div className="form-actions spread">
-                <button type="button" className="btn ghost" onClick={() => resetWizard()}>
-                  Nuevo registro
-                </button>
-                <button type="button" className="btn primary" onClick={() => setView('landing')}>
-                  Inicio
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
 }
 
-function IntegrationPage() {
-  const [loading, setLoading] = useState(false)
-  const [lines, setLines] = useState<{ device: string; hik: string } | null>(null)
-
-  const appName = import.meta.env.VITE_APP_NAME ?? '—'
-  const deviceBase = import.meta.env.VITE_APP_HIK_DEVICE_BASE_URL ?? ''
-  const hikBase = import.meta.env.VITE_APP_HIKCENTRAL_BASE_URL ?? ''
-  const appKey = import.meta.env.VITE_APP_HIKCENTRAL_APP_KEY ?? ''
-  const appSecret = import.meta.env.VITE_APP_HIKCENTRAL_APP_SECRET ?? ''
-  const apiMode = getApiMode()
-  const apiModeRaw = getApiModeRaw()
-  const orgIndex = import.meta.env.VITE_APP_HIK_ORG_INDEX_CODE ?? ''
-  const accB = import.meta.env.VITE_APP_HIK_ACCESS_BASE ?? ''
-  const accP = import.meta.env.VITE_APP_HIK_ACCESS_PREMIUM ?? ''
-  const accV = import.meta.env.VITE_APP_HIK_ACCESS_VIP ?? ''
-
-  async function test() {
-    setLoading(true)
-    try {
-      setLines(await runConnectionTests())
-    } finally {
-      setLoading(false)
-    }
+function buildPersonPayload(form: PersonFormState): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    personCode: form.personCode.trim(),
+    personGivenName: form.personGivenName.trim(),
+    personFamilyName: form.personFamilyName.trim(),
+    gender: form.gender,
+    orgIndexCode: form.orgIndexCode.trim(),
+    remark: form.remark.trim(),
+    phoneNo: form.phoneNo.trim(),
+    email: form.email.trim(),
   }
-
-  return (
-    <div className="page integration-page">
-      <section className="card integration-hero">
-        <p className="eyebrow">Red</p>
-        <h1>Integración</h1>
-        <p className="step-hint">
-          En <strong>desarrollo</strong>, las llamadas a HikCentral van por{' '}
-          <code className="inline-code">/hikcentral-proxy/*</code> (proxy en Vite; también{' '}
-          <code className="inline-code">/__hik</code> y <code className="inline-code">/hik</code>) →{' '}
-          <code className="inline-code">VITE_APP_HIK_PROXY_TARGET</code> si está definida, si no{' '}
-          <code className="inline-code">VITE_APP_HIKCENTRAL_BASE_URL</code>. La prueba de conexión usa
-          ese mismo proxy cuando la URL coincide con esa base (evita &quot;Failed to fetch&quot; por
-          certificado HTTPS en el navegador). Si el dispositivo apunta a otro host que no es el del
-          proxy, el GET sigue siendo directo y puede fallar por CORS o TLS.
-        </p>
-        <button type="button" className="btn primary" disabled={loading} onClick={() => void test()}>
-          {loading ? 'Probando…' : 'Probar conexiones'}
-        </button>
-        {lines && (
-          <div className="ping-results">
-            <p>
-              <strong>Dispositivo:</strong> {lines.device}
-            </p>
-            <p>
-              <strong>HikCentral:</strong> {lines.hik}
-            </p>
-          </div>
-        )}
-      </section>
-
-      <section className="card env-table">
-        <h2>Entorno</h2>
-        <dl className="env-grid">
-          <div>
-            <dt>VITE_APP_NAME</dt>
-            <dd>{appName}</dd>
-          </div>
-          <div>
-            <dt>VITE_APP_HIK_DEVICE_BASE_URL</dt>
-            <dd className="mono">{deviceBase || '—'}</dd>
-          </div>
-          <div>
-            <dt>VITE_APP_HIKCENTRAL_BASE_URL</dt>
-            <dd className="mono">{hikBase || '—'}</dd>
-          </div>
-          <div>
-            <dt>VITE_APP_HIKCENTRAL_APP_KEY</dt>
-            <dd className="mono">{appKey ? mask(appKey) : '—'}</dd>
-          </div>
-          <div>
-            <dt>VITE_APP_HIKCENTRAL_APP_SECRET</dt>
-            <dd className="mono">{appSecret ? mask(appSecret) : '—'}</dd>
-          </div>
-          <div>
-            <dt>VITE_APP_API_MODE (efectivo / crudo)</dt>
-            <dd>
-              <span className="badge">{apiMode}</span>
-              <span className="muted small"> — variable en bundle: {apiModeRaw}</span>
-            </dd>
-          </div>
-          <div>
-            <dt>VITE_APP_HIK_ORG_INDEX_CODE</dt>
-            <dd className="mono">{orgIndex || '—'}</dd>
-          </div>
-          <div>
-            <dt>VITE_APP_HIK_ACCESS_BASE / PREMIUM / VIP</dt>
-            <dd className="mono small">
-              {accB || '—'} · {accP || '—'} · {accV || '—'}
-            </dd>
-          </div>
-        </dl>
-      </section>
-    </div>
-  )
+  const card = form.cardNo.replace(/\D/g, '')
+  if (card.length >= 4) {
+    base.cards = [{ cardNo: card.slice(0, 20) }]
+  }
+  if (form.beginTime.trim()) {
+    base.beginTime = new Date(form.beginTime).toISOString()
+  }
+  if (form.endTime.trim()) {
+    base.endTime = new Date(form.endTime).toISOString()
+  }
+  return mergeExtraJson(base)
 }
 
-function Shell() {
-  const { view } = useToram()
-  return (
-    <div className="app">
-      <Header />
-      <main className="main">
-        {view === 'landing' && <Landing />}
-        {view === 'wizard' && <Wizard />}
-        {view === 'integration' && <IntegrationPage />}
-      </main>
-      <footer className="footer">
-        <p>Demo TORAM — pago simulado. No hay pasarela real.</p>
-      </footer>
-    </div>
-  )
+function prettyJson(v: unknown): string {
+  try {
+    return JSON.stringify(v, null, 2)
+  } catch {
+    return String(v)
+  }
 }
 
 export default function App() {
+  const defaultOrg = import.meta.env.VITE_APP_HIK_ORG_INDEX_CODE ?? ''
+  const [personForm, setPersonForm] = useState<PersonFormState>(() => ({
+    ...emptyPersonForm(),
+    orgIndexCode: defaultOrg,
+  }))
+  const [pageNo, setPageNo] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [lastPersonId, setLastPersonId] = useState('')
+  const [privilegeGroupId, setPrivilegeGroupId] = useState(
+    import.meta.env.VITE_APP_HIK_ACCESS_BASE || '1',
+  )
+  const [privilegeType, setPrivilegeType] = useState(1)
+
+  const [lastResult, setLastResult] = useState<string | null>(null)
+  const [lastError, setLastError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [pingLines, setPingLines] = useState<{ device: string; hik: string } | null>(null)
+
+  const apiMode = getApiMode()
+
+  const envBlock = useMemo(
+    () => ({
+      appName: import.meta.env.VITE_APP_NAME ?? '—',
+      deviceBase: import.meta.env.VITE_APP_HIK_DEVICE_BASE_URL ?? '',
+      hikBase: import.meta.env.VITE_APP_HIKCENTRAL_BASE_URL ?? '',
+      appKey: import.meta.env.VITE_APP_HIKCENTRAL_APP_KEY ?? '',
+      appSecret: import.meta.env.VITE_APP_HIKCENTRAL_APP_SECRET ?? '',
+      apiModeRaw: getApiModeRaw(),
+      orgIndex: import.meta.env.VITE_APP_HIK_ORG_INDEX_CODE ?? '',
+    }),
+    [],
+  )
+
+  const run = useCallback(
+    async (label: string, fn: () => Promise<void>) => {
+      setBusy(label)
+      setLastError(null)
+      try {
+        await fn()
+      } catch (e) {
+        setLastError(e instanceof Error ? e.message : 'Error')
+      } finally {
+        setBusy(null)
+      }
+    },
+    [],
+  )
+
+  const setResult = (r: Awaited<ReturnType<typeof postArtemis>>) => {
+    setLastResult(prettyJson(r.json ?? r.text))
+    if (!r.ok && r.errorMessage) setLastError(r.errorMessage)
+  }
+
   return (
-    <ToramProvider>
-      <Shell />
-    </ToramProvider>
+    <div className="app">
+      <header className="app-header">
+        <div className="brand" style={{ cursor: 'default' }}>
+          <span className="brand-mark" aria-hidden>
+            ◈
+          </span>
+          <span className="brand-text">{appName}</span>
+        </div>
+        <div className="nav" aria-label="Estado">
+          <span
+            className={`api-mode-pill ${apiMode}`}
+            title="Tras cambiar .env.local, reinicia npm run dev"
+          >
+            API: {apiMode}
+          </span>
+        </div>
+      </header>
+
+      <main className="main tester-main">
+        <p className="lede tester-lede">
+          Probador basado en la colección Postman <strong>HikCentral Open API</strong>: mismas rutas{' '}
+          <code className="inline-code">/artemis/api/...</code>, firma Artemis y proxy de desarrollo{' '}
+          <code className="inline-code">/hikcentral-proxy</code>.
+        </p>
+
+        <section className="card">
+          <p className="eyebrow">Red</p>
+          <h2 className="step-title">Conexión</h2>
+          <p className="step-hint">
+            Con <code className="inline-code">VITE_APP_API_MODE=real</code> las peticiones van firmadas a
+            HikCentral. En modo <code className="inline-code">mock</code> se simulan respuestas sin red.
+          </p>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={!!busy}
+            onClick={() =>
+              void run('ping', async () => {
+                setPingLines(await runConnectionTests())
+              })
+            }
+          >
+            {busy === 'ping' ? 'Probando…' : 'Probar conexiones (dispositivo + Hik)'}
+          </button>
+          {pingLines && (
+            <div className="ping-results">
+              <p>
+                <strong>Dispositivo:</strong> {pingLines.device}
+              </p>
+              <p>
+                <strong>HikCentral:</strong> {pingLines.hik}
+              </p>
+            </div>
+          )}
+        </section>
+
+        <section className="card env-table">
+          <h2 className="step-title">Entorno</h2>
+          <dl className="env-grid">
+            <div>
+              <dt>VITE_APP_NAME</dt>
+              <dd>{envBlock.appName}</dd>
+            </div>
+            <div>
+              <dt>VITE_APP_HIK_DEVICE_BASE_URL</dt>
+              <dd className="mono">{envBlock.deviceBase || '—'}</dd>
+            </div>
+            <div>
+              <dt>VITE_APP_HIKCENTRAL_BASE_URL</dt>
+              <dd className="mono">{envBlock.hikBase || '—'}</dd>
+            </div>
+            <div>
+              <dt>VITE_APP_HIKCENTRAL_APP_KEY</dt>
+              <dd className="mono">{envBlock.appKey ? mask(envBlock.appKey) : '—'}</dd>
+            </div>
+            <div>
+              <dt>VITE_APP_HIKCENTRAL_APP_SECRET</dt>
+              <dd className="mono">{envBlock.appSecret ? mask(envBlock.appSecret) : '—'}</dd>
+            </div>
+            <div>
+              <dt>VITE_APP_API_MODE</dt>
+              <dd>
+                <span className="badge">{apiMode}</span>
+                <span className="muted small"> — bundle: {envBlock.apiModeRaw}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>VITE_APP_HIK_ORG_INDEX_CODE</dt>
+              <dd className="mono">{envBlock.orgIndex || '—'}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="card">
+          <p className="eyebrow">Consultas POST</p>
+          <h2 className="step-title">Listados</h2>
+          <p className="step-hint">
+            En Open API casi todo es <strong>POST</strong> con JSON (como en Postman).
+          </p>
+          <div className="tester-actions">
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={!!busy}
+              onClick={() =>
+                void run('org', async () => {
+                  const r = await postArtemis(HIK_ARTEMIS_PATHS.orgList, { pageNo: 1, pageSize: 100 })
+                  setResult(r)
+                })
+              }
+            >
+              Organizaciones
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={!!busy}
+              onClick={() =>
+                void run('priv', async () => {
+                  const r = await postArtemis(HIK_ARTEMIS_PATHS.privilegeGroupList, {})
+                  setResult(r)
+                })
+              }
+            >
+              Grupos de privilegio (ACS)
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              disabled={!!busy}
+              onClick={() =>
+                void run('veh', async () => {
+                  const r = await postArtemis(HIK_ARTEMIS_PATHS.vehicleList, {
+                    pageNo: 1,
+                    pageSize: 10,
+                    vehicleGroupIndexCode: '0',
+                  })
+                  setResult(r)
+                })
+              }
+            >
+              Vehículos (ejemplo)
+            </button>
+          </div>
+          <div className="field-row">
+            <div className="field compact">
+              <label htmlFor="pageNo">pageNo</label>
+              <input
+                id="pageNo"
+                type="number"
+                min={1}
+                value={pageNo}
+                onChange={(e) => setPageNo(Number(e.target.value) || 1)}
+              />
+            </div>
+            <div className="field compact">
+              <label htmlFor="pageSize">pageSize</label>
+              <input
+                id="pageSize"
+                type="number"
+                min={1}
+                max={500}
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value) || 10)}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!!busy}
+              onClick={() =>
+                void run('persons', async () => {
+                  const r = await postArtemis(HIK_ARTEMIS_PATHS.personList, { pageNo, pageSize })
+                  setResult(r)
+                })
+              }
+            >
+              Personas
+            </button>
+          </div>
+        </section>
+
+        <section className="card">
+          <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.personAdd}</p>
+          <h2 className="step-title">Alta de persona</h2>
+          <p className="step-hint">
+            Campos alineados con la petición <strong>Agregar persona</strong> de la colección (sin foto; puedes
+            fusionar JSON con <code className="inline-code">VITE_APP_HIK_PERSON_EXTRA_JSON</code>).
+          </p>
+          <div className="field-row">
+            <div className="field grow">
+              <label htmlFor="personCode">personCode</label>
+              <input
+                id="personCode"
+                className="mono"
+                value={personForm.personCode}
+                onChange={(e) => setPersonForm((f) => ({ ...f, personCode: e.target.value }))}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setPersonForm((f) => ({ ...f, personCode: randomPersonCode() }))}
+            >
+              Generar
+            </button>
+          </div>
+          <div className="field-row two-col">
+            <div className="field">
+              <label htmlFor="given">personGivenName</label>
+              <input
+                id="given"
+                value={personForm.personGivenName}
+                onChange={(e) => setPersonForm((f) => ({ ...f, personGivenName: e.target.value }))}
+                autoComplete="given-name"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="family">personFamilyName</label>
+              <input
+                id="family"
+                value={personForm.personFamilyName}
+                onChange={(e) => setPersonForm((f) => ({ ...f, personFamilyName: e.target.value }))}
+                autoComplete="family-name"
+              />
+            </div>
+          </div>
+          <div className="field-row two-col">
+            <div className="field">
+              <label htmlFor="gender">gender</label>
+              <select
+                id="gender"
+                value={personForm.gender}
+                onChange={(e) => setPersonForm((f) => ({ ...f, gender: Number(e.target.value) }))}
+              >
+                <option value={1}>1 — habitual en muestras Postman</option>
+                <option value={2}>2</option>
+                <option value={0}>0</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="org">orgIndexCode</label>
+              <input
+                id="org"
+                className="mono"
+                value={personForm.orgIndexCode}
+                onChange={(e) => setPersonForm((f) => ({ ...f, orgIndexCode: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="remark">remark</label>
+            <input
+              id="remark"
+              value={personForm.remark}
+              onChange={(e) => setPersonForm((f) => ({ ...f, remark: e.target.value }))}
+            />
+          </div>
+          <div className="field-row two-col">
+            <div className="field">
+              <label htmlFor="phone">phoneNo</label>
+              <input
+                id="phone"
+                value={personForm.phoneNo}
+                onChange={(e) => setPersonForm((f) => ({ ...f, phoneNo: e.target.value }))}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="email">email</label>
+              <input
+                id="email"
+                type="email"
+                value={personForm.email}
+                onChange={(e) => setPersonForm((f) => ({ ...f, email: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="field-row two-col">
+            <div className="field">
+              <label htmlFor="card">cardNo (opcional)</label>
+              <input
+                id="card"
+                className="mono"
+                value={personForm.cardNo}
+                onChange={(e) => setPersonForm((f) => ({ ...f, cardNo: e.target.value }))}
+                placeholder="Solo dígitos, ≥4 → se envía como cards[]"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="bt">beginTime (opcional)</label>
+              <input
+                id="bt"
+                type="datetime-local"
+                value={personForm.beginTime}
+                onChange={(e) => setPersonForm((f) => ({ ...f, beginTime: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="et">endTime (opcional)</label>
+            <input
+              id="et"
+              type="datetime-local"
+              value={personForm.endTime}
+              onChange={(e) => setPersonForm((f) => ({ ...f, endTime: e.target.value }))}
+            />
+          </div>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!!busy}
+              onClick={() =>
+                void run('addPerson', async () => {
+                  if (!personForm.personCode.trim() || !personForm.orgIndexCode.trim()) {
+                    setLastError('personCode y orgIndexCode son obligatorios.')
+                    return
+                  }
+                  if (!personForm.personGivenName.trim() || !personForm.personFamilyName.trim()) {
+                    setLastError('personGivenName y personFamilyName son obligatorios.')
+                    return
+                  }
+                  const payload = buildPersonPayload(personForm)
+                  const r = await postArtemis(HIK_ARTEMIS_PATHS.personAdd, payload)
+                  setResult(r)
+                  if (r.ok && r.json) {
+                    const pid = extractPersonIdFromAddResponse(r.json)
+                    if (pid) setLastPersonId(pid)
+                  }
+                })
+              }
+            >
+              {busy === 'addPerson' ? 'Enviando…' : 'Crear persona'}
+            </button>
+          </div>
+        </section>
+
+        <section className="card">
+          <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.privilegeAddPersons}</p>
+          <h2 className="step-title">Asignar persona a grupo de privilegio</h2>
+          <p className="step-hint">
+            Misma forma que <strong>Agregar persona a nivel de acceso</strong> en Postman:{' '}
+            <code className="inline-code">privilegeGroupId</code>, <code className="inline-code">type</code>,{' '}
+            <code className="inline-code">list[].id</code> = personId.
+          </p>
+          <div className="field-row two-col">
+            <div className="field">
+              <label htmlFor="pgid">privilegeGroupId</label>
+              <input
+                id="pgid"
+                className="mono"
+                value={privilegeGroupId}
+                onChange={(e) => setPrivilegeGroupId(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="ptype">type</label>
+              <input
+                id="ptype"
+                type="number"
+                value={privilegeType}
+                onChange={(e) => setPrivilegeType(Number(e.target.value) || 1)}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="pid">personId</label>
+            <input
+              id="pid"
+              className="mono"
+              value={lastPersonId}
+              onChange={(e) => setLastPersonId(e.target.value)}
+              placeholder="Se rellena tras crear persona con éxito"
+            />
+          </div>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!!busy || !lastPersonId.trim()}
+              onClick={() =>
+                void run('addPriv', async () => {
+                  const r = await postArtemis(HIK_ARTEMIS_PATHS.privilegeAddPersons, {
+                    privilegeGroupId: privilegeGroupId.trim(),
+                    type: privilegeType,
+                    list: [{ id: lastPersonId.trim() }],
+                  })
+                  setResult(r)
+                })
+              }
+            >
+              {busy === 'addPriv' ? 'Enviando…' : 'Asignar grupo'}
+            </button>
+          </div>
+        </section>
+
+        {(lastError || lastResult) && (
+          <section className="card tester-response">
+            <h2 className="step-title">Última respuesta</h2>
+            {lastError && (
+              <div className="error-banner" role="alert">
+                {lastError}
+              </div>
+            )}
+            {lastResult && <pre className="payload-pre tester-pre">{lastResult}</pre>}
+          </section>
+        )}
+      </main>
+
+      <footer className="footer">
+        <p>HikCentral Open API — probador local. No almacena credenciales fuera de .env.local.</p>
+      </footer>
+    </div>
   )
 }

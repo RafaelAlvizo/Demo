@@ -1,4 +1,3 @@
-import type { Tier } from '../types'
 import { HIK_DEV_PROXY_PREFIX } from './config'
 import { getApiMode } from './envMode'
 
@@ -19,33 +18,6 @@ function shouldPingViaDevProxy(url: string): boolean {
   const base = normalizeBaseUrl(url)
   const target = devProxyTargetBase()
   return base.length > 0 && target.length > 0 && base === target
-}
-
-function randomSegment(len: number): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  let s = ''
-  for (let i = 0; i < len; i++) {
-    s += chars[Math.floor(Math.random() * chars.length)]
-  }
-  return s
-}
-
-export function generateWristbandCode(): string {
-  return `WB-${randomSegment(4)}-${randomSegment(4)}`
-}
-
-export function generateTransactionId(): string {
-  return `TXN-${Date.now().toString(36).toUpperCase()}-${randomSegment(6)}`
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms))
-}
-
-/** Cobro simulado — nunca hay pasarela real. */
-export async function simulatePayment(_tier: Tier): Promise<{ transactionId: string }> {
-  await delay(600)
-  return { transactionId: generateTransactionId() }
 }
 
 /**
