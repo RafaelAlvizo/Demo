@@ -26,16 +26,24 @@ function randomNumericPersonCode(): string {
 }
 
 /**
- * Algunas instalaciones esperan personCode como número JSON; otras como string.
+ * Postman / HikCentral suelen enviar personCode como string JSON ("1596").
+ * Solo usar número si defines VITE_APP_HIK_PERSON_CODE_JSON_NUMBER=true.
  */
-function personCodeJsonValue(s: string): string | number {
+function personCodeForApi(s: string): string | number {
   const t = s.trim()
-  if (!t) return t
-  if (/^\d{1,15}$/.test(t)) {
-    const n = Number(t)
-    if (Number.isSafeInteger(n)) return n
+  const asNum = import.meta.env.VITE_APP_HIK_PERSON_CODE_JSON_NUMBER
+  if (asNum === 'true' || asNum === '1') {
+    if (/^\d{1,15}$/.test(t)) {
+      const n = Number(t)
+      if (Number.isSafeInteger(n)) return n
+    }
   }
   return t
+}
+
+/** Misma regla para addPersons list[].personCode */
+function personCodeJsonValue(s: string): string | number {
+  return personCodeForApi(s)
 }
 
 /** Cómo construir cada elemento de `list` en addPersons (varía según versión HCP). */
@@ -68,6 +76,28 @@ function buildAddPersonsList(
 function toDatetimeLocalValue(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/**
+ * ISO con offset local (ej. Postman: 2020-05-26T15:00:00+08:00). Evita mandar siempre …Z (UTC),
+ * que a veces dispara validaciones rígidas en control de acceso / sincronía a terminales.
+ */
+function formatDateTimeForHikAccess(fromDatetimeLocal: string): string {
+  const d = new Date(fromDatetimeLocal)
+  if (Number.isNaN(d.getTime())) return new Date().toISOString()
+  const p2 = (n: number) => String(n).padStart(2, '0')
+  const y = d.getFullYear()
+  const mo = p2(d.getMonth() + 1)
+  const day = p2(d.getDate())
+  const h = p2(d.getHours())
+  const mi = p2(d.getMinutes())
+  const s = p2(d.getSeconds())
+  let offsetMin = -d.getTimezoneOffset()
+  const sign = offsetMin >= 0 ? '+' : '-'
+  offsetMin = Math.abs(offsetMin)
+  const oh = p2(Math.floor(offsetMin / 60))
+  const om = p2(offsetMin % 60)
+  return `${y}-${mo}-${day}T${h}:${mi}:${s}${sign}${oh}:${om}`
 }
 
 /** Rellena todos los campos del alta con datos plausibles para probar en un clic. */
@@ -115,7 +145,7 @@ function buildPersonPayload(form: PersonFormState): Record<string, unknown> {
   const family = form.personFamilyName.trim()
   const personCode = form.personCode.trim()
   const base: Record<string, unknown> = {
-    personCode: personCodeJsonValue(personCode),
+    personCode: personCodeForApi(personCode),
     personGivenName: given,
     personFamilyName: family,
     gender: form.gender,
@@ -129,10 +159,13 @@ function buildPersonPayload(form: PersonFormState): Record<string, unknown> {
     base.cards = [{ cardNo: card.slice(0, 20) }]
   }
   if (form.beginTime.trim()) {
-    base.beginTime = new Date(form.beginTime).toISOString()
+    base.beginTime = formatDateTimeForHikAccess(form.beginTime)
   }
   if (form.endTime.trim()) {
-    base.endTime = new Date(form.endTime).toISOString()
+    base.endTime = formatDateTimeForHikAccess(form.endTime)
+  }
+  if (import.meta.env.VITE_APP_HIK_OMIT_PERSON_NAME !== 'true') {
+    base.personName = `${given} ${family}`.trim()
   }
   return mergeExtraJson(base)
 }
@@ -444,11 +477,14 @@ export default function App() {
           <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.personAdd}</p>
           <h2 className="step-title">Alta de persona</h2>
           <p className="step-hint">
-            Campos alineados con <strong>Agregar persona</strong> en Postman (sin foto). El{' '}
-            <strong>personCode</strong> debe ser <strong>corto y numérico</strong> (estilo “1596”); códigos muy
-            largos suelen provocar <code className="inline-code">code 2 · personCode parameter error</code>.{' '}
-            <code className="inline-code">VITE_APP_HIK_PERSON_EXTRA_JSON</code> se fusiona antes del formulario: los
-            valores que escribes aquí tienen prioridad (así un extra no pisa el personCode).
+            <strong>HikCentral Open API</strong> (<code className="inline-code">/artemis/…/person/single/add</code>): mismo
+            enfoque que la colección Postman. Los PDF de SYSCOM sobre eventos <strong>MinMoe</strong> suelen describir{' '}
+            <strong>ISAPI en el lector</strong> (HTTP al terminal), no este endpoint; el alta aquí es la de plataforma.
+            Se envía <code className="inline-code">personName</code>, <code className="inline-code">personCode</code> como{' '}
+            <strong>string</strong> (como &quot;1596&quot;), y fechas con <strong>tu huso horario</strong> (no UTC forzado).
+            Para forzar <code className="inline-code">personCode</code> numérico en JSON:{' '}
+            <code className="inline-code">VITE_APP_HIK_PERSON_CODE_JSON_NUMBER=true</code>.{' '}
+            <code className="inline-code">VITE_APP_HIK_PERSON_EXTRA_JSON</code> se fusiona primero; el formulario gana.
           </p>
           <div className="tester-actions" style={{ marginBottom: '0.75rem' }}>
             <button

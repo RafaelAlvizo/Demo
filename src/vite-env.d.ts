@@ -27,6 +27,10 @@ interface ImportMetaEnv {
    * id-only | id-personCode | personId-personCode | personCode-only
    */
   readonly VITE_APP_HIK_ADD_PERSONS_LIST_FORMAT: string
+  /** Si true, personCode JSON numérico; por defecto string (como Postman / HCP típico). */
+  readonly VITE_APP_HIK_PERSON_CODE_JSON_NUMBER: string
+  /** Si true, no se envía personName en el alta (solo si tu gateway rechaza el campo). */
+  readonly VITE_APP_HIK_OMIT_PERSON_NAME: string
 }
 
 interface ImportMeta {
