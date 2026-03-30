@@ -12,6 +12,8 @@ export const HIK_ARTEMIS_PATHS = {
   privilegeAddPersons: '/artemis/api/acs/v1/privilege/group/single/addPersons',
   vehicleList: '/artemis/api/resource/v1/vehicle/vehicleList',
   acsDeviceList: '/artemis/api/resource/v1/acsDevice/acsDeviceList',
+  /** Colección Postman: «Obtener version» — POST sin payload útil. */
+  version: '/artemis/api/common/v1/version',
 } as const
 
 function parseJsonSafe(text: string): unknown {
@@ -98,6 +100,13 @@ function mockResponse(path: string, body: unknown): unknown {
   if (path.includes('vehicleList')) {
     return { code: '0', msg: 'Success (mock)', data: { total: 0, list: [] } }
   }
+  if (path.includes('common/v1/version')) {
+    return {
+      code: '0',
+      msg: 'Success (mock)',
+      data: { apiVersion: 'mock-1.0', platform: 'HikCentral (demo)' },
+    }
+  }
   return { code: '0', msg: 'Success (mock)', data: body }
 }
 
@@ -168,47 +177,68 @@ function coerceId(v: unknown): string | null {
 }
 
 /**
- * Busca personId bajo `data` pero **no** entra en la propiedad `list` (evita confundir un listado de personas con el alta).
+ * Busca un campo bajo `data` pero **no** entra en `list` (evita mezclar con listados).
  */
-function findInObjectSkipList(obj: Record<string, unknown>, depth: number): string | null {
+function findInObjectSkipList(
+  obj: Record<string, unknown>,
+  field: 'personId' | 'personCode',
+  depth: number,
+): string | null {
   if (depth > 8) return null
-  const direct = coerceId(obj.personId)
+  const direct = coerceId(obj[field])
   if (direct) return direct
   for (const [k, v] of Object.entries(obj)) {
     if (k === 'list') continue
-    const found = walkJsonForPersonId(v, depth + 1)
+    const found = walkJsonForField(v, field, depth + 1)
     if (found) return found
   }
   return null
 }
 
-function walkJsonForPersonId(v: unknown, depth: number): string | null {
+function walkJsonForField(
+  v: unknown,
+  field: 'personId' | 'personCode',
+  depth: number,
+): string | null {
   if (depth > 8) return null
   if (Array.isArray(v)) {
     for (const item of v) {
-      const found = walkJsonForPersonId(item, depth + 1)
+      const found = walkJsonForField(item, field, depth + 1)
       if (found) return found
     }
     return null
   }
   if (v && typeof v === 'object') {
-    return findInObjectSkipList(v as Record<string, unknown>, depth + 1)
+    return findInObjectSkipList(v as Record<string, unknown>, field, depth + 1)
+  }
+  return null
+}
+
+function extractPersonFieldFromAddResponse(
+  json: unknown,
+  field: 'personId' | 'personCode',
+): string | null {
+  if (!json || typeof json !== 'object') return null
+  const o = json as Record<string, unknown>
+  const top = coerceId(o[field])
+  if (top) return top
+
+  const data = o.data
+  if (field === 'personId') {
+    const plain = coerceId(data)
+    if (plain) return plain
+  }
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return findInObjectSkipList(data as Record<string, unknown>, field, 0)
   }
   return null
 }
 
 /** personId devuelto por POST person/single/add (acepta string o número). */
 export function extractPersonIdFromAddResponse(json: unknown): string | null {
-  if (!json || typeof json !== 'object') return null
-  const o = json as Record<string, unknown>
-  const top = coerceId(o.personId)
-  if (top) return top
+  return extractPersonFieldFromAddResponse(json, 'personId')
+}
 
-  const data = o.data
-  const plain = coerceId(data)
-  if (plain) return plain
-  if (data && typeof data === 'object' && !Array.isArray(data)) {
-    return findInObjectSkipList(data as Record<string, unknown>, 0)
-  }
-  return null
+export function extractPersonCodeFromAddResponse(json: unknown): string | null {
+  return extractPersonFieldFromAddResponse(json, 'personCode')
 }

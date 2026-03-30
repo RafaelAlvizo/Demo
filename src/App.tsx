@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
+  extractPersonCodeFromAddResponse,
   extractPersonIdFromAddResponse,
   HIK_ARTEMIS_PATHS,
   type ArtemisPostResult,
@@ -17,9 +18,42 @@ function mask(s: string): string {
   return `${s.slice(0, 2)}…${s.slice(-2)}`
 }
 
-function randomPersonCode(): string {
-  const n = Math.random().toString(36).slice(2, 10).toUpperCase()
-  return `TEST-${n}`
+/** personCode solo dígitos (muchas instalaciones rechazan letras → "personCode parameter error"). */
+function randomNumericPersonCode(): string {
+  const suffix = Math.floor(1000 + Math.random() * 9000)
+  return `${Date.now()}${suffix}`.replace(/\D/g, '').slice(0, 18)
+}
+
+function toDatetimeLocalValue(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** Rellena todos los campos del alta con datos plausibles para probar en un clic. */
+function buildDemoPersonForm(orgFallback: string): PersonFormState {
+  const idSuffix = Math.floor(1000 + Math.random() * 9000)
+  const first = 'Demo'
+  const last = `Usuario${idSuffix}`
+  const now = new Date()
+  const end = new Date(now)
+  end.setDate(end.getDate() + 1)
+  end.setHours(23, 59, 0, 0)
+  const phone = `614${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}`
+  const card = String(Math.floor(1e11 + Math.random() * 9e11))
+  return {
+    ...emptyPersonForm(),
+    personCode: randomNumericPersonCode(),
+    personGivenName: first,
+    personFamilyName: last,
+    gender: 1,
+    orgIndexCode: orgFallback.trim() || '1',
+    remark: `Alta demo ${now.toLocaleString('es-MX')}`,
+    phoneNo: phone,
+    email: `demo.${last.toLowerCase()}.${Date.now() % 100000}@example.com`,
+    cardNo: card,
+    beginTime: toDatetimeLocalValue(now),
+    endTime: toDatetimeLocalValue(end),
+  }
 }
 
 function mergeExtraJson(base: Record<string, unknown>): Record<string, unknown> {
@@ -74,6 +108,8 @@ export default function App() {
   const [pageNo, setPageNo] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [lastPersonId, setLastPersonId] = useState('')
+  /** Misma persona que lastPersonId: Hik exige personCode en addPersons además del id. */
+  const [lastPersonCode, setLastPersonCode] = useState('')
   const [privilegeGroupId, setPrivilegeGroupId] = useState(
     import.meta.env.VITE_APP_HIK_ACCESS_BASE || '1',
   )
@@ -122,15 +158,27 @@ export default function App() {
     if (!r.ok && r.errorMessage) setLastError(r.errorMessage)
   }
 
-  const fillPersonIdFromLastResponse = () => {
+  const fillPersonFieldsFromLastResponse = () => {
     const pid = extractPersonIdFromAddResponse(lastApiJson)
-    if (pid) {
-      setLastPersonId(pid)
-      setPersonIdAutofillNote(`PersonId tomado de la última respuesta: ${pid}`)
-      setLastError(null)
-    } else {
-      setLastError('No hay personId reconocible en la última respuesta. Revisa el JSON abajo.')
+    const pc = extractPersonCodeFromAddResponse(lastApiJson)
+    if (!pid && !pc) {
+      setLastError(
+        'En la última respuesta no hay personId ni personCode reconocibles. Revisa el JSON abajo.',
+      )
+      return
     }
+    if (pid) setLastPersonId(pid)
+    if (pc) setLastPersonCode(pc)
+    setPersonIdAutofillNote(
+      [
+        pid ? `personId: ${pid}` : null,
+        pc ? `personCode: ${pc}` : null,
+        'Listo para «Asignar grupo».',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    )
+    setLastError(null)
   }
 
   return (
@@ -188,6 +236,28 @@ export default function App() {
               </p>
             </div>
           )}
+        </section>
+
+        <section className="card">
+          <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.version}</p>
+          <h2 className="step-title">Versión (Open API / plataforma)</h2>
+          <p className="step-hint">
+            Igual que <strong>Obtener version</strong> en la colección Postman. Cuerpo vacío{' '}
+            <code className="inline-code">{'{}'}</code>.
+          </p>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={!!busy}
+            onClick={() =>
+              void run('version', async () => {
+                const r = await postArtemis(HIK_ARTEMIS_PATHS.version, {})
+                applyResultToState(r)
+              })
+            }
+          >
+            {busy === 'version' ? 'Consultando…' : 'Consultar versión'}
+          </button>
         </section>
 
         <section className="card env-table">
@@ -320,9 +390,23 @@ export default function App() {
           <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.personAdd}</p>
           <h2 className="step-title">Alta de persona</h2>
           <p className="step-hint">
-            Campos alineados con la petición <strong>Agregar persona</strong> de la colección (sin foto; puedes
-            fusionar JSON con <code className="inline-code">VITE_APP_HIK_PERSON_EXTRA_JSON</code>).
+            Campos alineados con <strong>Agregar persona</strong> en Postman (sin foto). Usa{' '}
+            <strong>personCode solo numérico</strong> si el servidor devuelve error de parámetro. Puedes fusionar
+            JSON con <code className="inline-code">VITE_APP_HIK_PERSON_EXTRA_JSON</code>.
           </p>
+          <div className="tester-actions" style={{ marginBottom: '0.75rem' }}>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!!busy}
+              onClick={() => {
+                setPersonForm(buildDemoPersonForm(personForm.orgIndexCode || defaultOrg))
+                setPersonIdAutofillNote(null)
+              }}
+            >
+              Autollenar todo (demo) → luego Crear persona
+            </button>
+          </div>
           <div className="field-row">
             <div className="field grow">
               <label htmlFor="personCode">personCode</label>
@@ -331,14 +415,16 @@ export default function App() {
                 className="mono"
                 value={personForm.personCode}
                 onChange={(e) => setPersonForm((f) => ({ ...f, personCode: e.target.value }))}
+                placeholder="Recomendado: solo números"
               />
             </div>
             <button
               type="button"
               className="btn ghost"
-              onClick={() => setPersonForm((f) => ({ ...f, personCode: randomPersonCode() }))}
+              onClick={() => setPersonForm((f) => ({ ...f, personCode: randomNumericPersonCode() }))}
+              title="Genera solo personCode numérico"
             >
-              Generar
+              Solo código
             </button>
           </div>
           <div className="field-row two-col">
@@ -462,12 +548,20 @@ export default function App() {
                   applyResultToState(r)
                   if (r.ok && r.json) {
                     const pid = extractPersonIdFromAddResponse(r.json)
+                    const pcForm = personForm.personCode.trim()
+                    const pcResp = extractPersonCodeFromAddResponse(r.json)
+                    setLastPersonCode(pcForm || pcResp || '')
                     if (pid) {
                       setLastPersonId(pid)
-                      setPersonIdAutofillNote(`Listo para asignar grupo — personId: ${pid}`)
+                      const pc = pcForm || pcResp || ''
+                      setPersonIdAutofillNote(
+                        pc
+                          ? `Siguiente paso — personId: ${pid} · personCode: ${pc}`
+                          : `personId: ${pid}. Añade personCode manualmente para asignar grupo, o vuelve a crear con código en el formulario.`,
+                      )
                     } else {
                       setPersonIdAutofillNote(
-                        'Alta correcta, pero no se detectó personId en la respuesta. Pulsa «Rellenar desde última respuesta» o cópialo del JSON.',
+                        'Alta correcta, pero no se detectó personId. Pulsa «Rellenar desde última respuesta» o revisa el JSON.',
                       )
                     }
                   }
@@ -483,9 +577,10 @@ export default function App() {
           <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.privilegeAddPersons}</p>
           <h2 className="step-title">Asignar persona a grupo de privilegio</h2>
           <p className="step-hint">
-            Misma forma que <strong>Agregar persona a nivel de acceso</strong> en Postman:{' '}
-            <code className="inline-code">privilegeGroupId</code>, <code className="inline-code">type</code>,{' '}
-            <code className="inline-code">list[].id</code> = personId.
+            En muchas instalaciones Hik el cuerpo debe incluir <strong>personId</strong> y{' '}
+            <strong>personCode</strong> en cada elemento de <code className="inline-code">list</code> (si falta{' '}
+            <code className="inline-code">personCode</code>, error «personCode parameter error»). Se rellenan al
+            crear persona con éxito.
           </p>
           <div className="field-row two-col">
             <div className="field">
@@ -524,14 +619,27 @@ export default function App() {
                 {personIdAutofillNote}
               </p>
             )}
+            <div className="field">
+              <label htmlFor="pcode">personCode (para addPersons)</label>
+              <input
+                id="pcode"
+                className="mono"
+                value={lastPersonCode}
+                onChange={(e) => {
+                  setLastPersonCode(e.target.value)
+                  setPersonIdAutofillNote(null)
+                }}
+                placeholder="Debe coincidir con el alta de persona"
+              />
+            </div>
             <div className="field-row" style={{ marginTop: '0.5rem' }}>
               <button
                 type="button"
                 className="btn ghost"
                 disabled={!lastResult}
-                onClick={() => fillPersonIdFromLastResponse()}
+                onClick={() => fillPersonFieldsFromLastResponse()}
               >
-                Rellenar personId desde última respuesta
+                Rellenar personId y personCode desde última respuesta
               </button>
             </div>
           </div>
@@ -539,13 +647,13 @@ export default function App() {
             <button
               type="button"
               className="btn primary"
-              disabled={!!busy || !lastPersonId.trim()}
+              disabled={!!busy || !lastPersonId.trim() || !lastPersonCode.trim()}
               onClick={() =>
                 void run('addPriv', async () => {
                   const r = await postArtemis(HIK_ARTEMIS_PATHS.privilegeAddPersons, {
                     privilegeGroupId: privilegeGroupId.trim(),
                     type: privilegeType,
-                    list: [{ id: lastPersonId.trim() }],
+                    list: [{ id: lastPersonId.trim(), personCode: lastPersonCode.trim() }],
                   })
                   applyResultToState(r)
                 })
