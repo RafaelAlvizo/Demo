@@ -22,6 +22,11 @@ interface ImportMetaEnv {
   readonly VITE_APP_HIK_ENDPOINT_ACCESS_BIND: string
   /** JSON fusionado al cuerpo de alta de persona (campos extra del API) */
   readonly VITE_APP_HIK_PERSON_EXTRA_JSON: string
+  /**
+   * Formato de cada item en POST …/privilege/group/single/addPersons:
+   * id-only | id-personCode | personId-personCode | personCode-only
+   */
+  readonly VITE_APP_HIK_ADD_PERSONS_LIST_FORMAT: string
 }
 
 interface ImportMeta {

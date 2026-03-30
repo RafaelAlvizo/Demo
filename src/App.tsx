@@ -19,14 +19,50 @@ function mask(s: string): string {
 }
 
 /**
- * Código corto numérico (p. ej. Postman usa "1596", "998"). Los timestamp largos suelen provocar
- * code 2 "personCode parameter error" por longitud o reglas del servidor.
+ * Código corto (4–6 dígitos, estilo Postman "1596"). Evita códigos largos que algunos HikCentral rechazan.
  */
 function randomNumericPersonCode(): string {
-  const t = Date.now() % 1_000_000
-  const r = Math.floor(1000 + Math.random() * 9000)
-  const s = `${t}${r}`.replace(/\D/g, '')
-  return s.slice(-9).replace(/^0+/, '') || String(1000 + r)
+  return String(Math.floor(1000 + Math.random() * 900000))
+}
+
+/**
+ * Algunas instalaciones esperan personCode como número JSON; otras como string.
+ */
+function personCodeJsonValue(s: string): string | number {
+  const t = s.trim()
+  if (!t) return t
+  if (/^\d{1,15}$/.test(t)) {
+    const n = Number(t)
+    if (Number.isSafeInteger(n)) return n
+  }
+  return t
+}
+
+/** Cómo construir cada elemento de `list` en addPersons (varía según versión HCP). */
+type AddPersonsListFormat =
+  | 'id-only'
+  | 'id-personCode'
+  | 'personId-personCode'
+  | 'personCode-only'
+
+function buildAddPersonsList(
+  format: AddPersonsListFormat,
+  personId: string,
+  personCode: string,
+): Record<string, unknown>[] {
+  const pid = personId.trim()
+  const pcRaw = personCode.trim()
+  const pc = personCodeJsonValue(pcRaw)
+  switch (format) {
+    case 'id-only':
+      return [{ id: pid }]
+    case 'id-personCode':
+      return [{ id: pid, personCode: pc }]
+    case 'personId-personCode':
+      return [{ personId: pid, personCode: pc }]
+    case 'personCode-only':
+      return [{ personCode: pc }]
+  }
 }
 
 function toDatetimeLocalValue(d: Date): string {
@@ -44,7 +80,8 @@ function buildDemoPersonForm(orgFallback: string): PersonFormState {
   end.setDate(end.getDate() + 1)
   end.setHours(23, 59, 0, 0)
   const phone = `614${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}`
-  const card = String(Math.floor(1e11 + Math.random() * 9e11))
+  /** Misma escala que ejemplo Postman (cardNo ~9 dígitos). */
+  const card = String(Math.floor(100_000_000 + Math.random() * 900_000_000))
   return {
     ...emptyPersonForm(),
     personCode: randomNumericPersonCode(),
@@ -78,7 +115,7 @@ function buildPersonPayload(form: PersonFormState): Record<string, unknown> {
   const family = form.personFamilyName.trim()
   const personCode = form.personCode.trim()
   const base: Record<string, unknown> = {
-    personCode,
+    personCode: personCodeJsonValue(personCode),
     personGivenName: given,
     personFamilyName: family,
     gender: form.gender,
@@ -123,6 +160,14 @@ export default function App() {
     import.meta.env.VITE_APP_HIK_ACCESS_BASE || '1',
   )
   const [privilegeType, setPrivilegeType] = useState(1)
+  const [addPersonsListFormat, setAddPersonsListFormat] = useState<AddPersonsListFormat>(() => {
+    const r = import.meta.env.VITE_APP_HIK_ADD_PERSONS_LIST_FORMAT?.trim().toLowerCase() ?? ''
+    if (r === 'id-only') return 'id-only'
+    if (r === 'id-personcode') return 'id-personCode'
+    if (r === 'personid-personcode') return 'personId-personCode'
+    if (r === 'personcode-only') return 'personCode-only'
+    return 'personId-personCode'
+  })
 
   const [lastResult, setLastResult] = useState<string | null>(null)
   const [lastError, setLastError] = useState<string | null>(null)
@@ -588,11 +633,29 @@ export default function App() {
           <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.privilegeAddPersons}</p>
           <h2 className="step-title">Asignar persona a grupo de privilegio</h2>
           <p className="step-hint">
-            En muchas instalaciones Hik el cuerpo debe incluir <strong>personId</strong> y{' '}
-            <strong>personCode</strong> en cada elemento de <code className="inline-code">list</code> (si falta{' '}
-            <code className="inline-code">personCode</code>, error «personCode parameter error»). Se rellenan al
-            crear persona con éxito.
+            El error <code className="inline-code">personCode parameter error</code> suele deberse al{' '}
+            <strong>formato del elemento en list</strong> (depende de la versión HCP) o a{' '}
+            <code className="inline-code">personCode</code> duplicado / inválido en el alta. Prueba otro valor en
+            «Formato list»; en el alta usamos <code className="inline-code">personCode</code> como número JSON si es
+            solo dígitos. Puedes fijar el formato por defecto con{' '}
+            <code className="inline-code">VITE_APP_HIK_ADD_PERSONS_LIST_FORMAT</code> (
+            <code className="inline-code">id-only</code>, <code className="inline-code">id-personCode</code>,{' '}
+            <code className="inline-code">personId-personCode</code>, <code className="inline-code">personCode-only</code>
+            ).
           </p>
+          <div className="field">
+            <label htmlFor="listFormat">Formato list (addPersons)</label>
+            <select
+              id="listFormat"
+              value={addPersonsListFormat}
+              onChange={(e) => setAddPersonsListFormat(e.target.value as AddPersonsListFormat)}
+            >
+              <option value="personId-personCode">personId + personCode (recomendado si falla Postman)</option>
+              <option value="id-personCode">id + personCode</option>
+              <option value="id-only">Solo id (Postman oficial)</option>
+              <option value="personCode-only">Solo personCode</option>
+            </select>
+          </div>
           <div className="field-row two-col">
             <div className="field">
               <label htmlFor="pgid">privilegeGroupId</label>
@@ -658,15 +721,21 @@ export default function App() {
             <button
               type="button"
               className="btn primary"
-              disabled={!!busy || !lastPersonId.trim() || !lastPersonCode.trim()}
+              disabled={
+                !!busy ||
+                (addPersonsListFormat !== 'personCode-only' && !lastPersonId.trim()) ||
+                (addPersonsListFormat !== 'id-only' && !lastPersonCode.trim())
+              }
               onClick={() =>
                 void run('addPriv', async () => {
-                  const pid = lastPersonId.trim()
-                  const pcode = lastPersonCode.trim()
                   const r = await postArtemis(HIK_ARTEMIS_PATHS.privilegeAddPersons, {
                     privilegeGroupId: privilegeGroupId.trim(),
                     type: privilegeType,
-                    list: [{ id: pid, personCode: pcode }],
+                    list: buildAddPersonsList(
+                      addPersonsListFormat,
+                      lastPersonId,
+                      lastPersonCode,
+                    ),
                   })
                   applyResultToState(r)
                 })
