@@ -14,10 +14,13 @@ import {
   SYSCOM_POSTMAN_BEGIN_ISO,
   SYSCOM_POSTMAN_END_ISO,
 } from './reference/syscomPostmanPerson'
+import { DEMO_PERSON_PRESETS, DEMO_TIERS, type DemoTierId } from './demo/demoData'
 import { emptyPersonForm, type PersonFormState } from './types'
 import './App.css'
 
 const appName = import.meta.env.VITE_APP_NAME ?? 'HikCentral API tester'
+
+type AppTab = 'tester' | 'demo'
 
 function mask(s: string): string {
   if (s.length <= 4) return '••••'
@@ -190,6 +193,7 @@ function prettyJson(v: unknown): string {
 
 export default function App() {
   const defaultOrg = import.meta.env.VITE_APP_HIK_ORG_INDEX_CODE ?? ''
+  const [tab, setTab] = useState<AppTab>('tester')
   const [personForm, setPersonForm] = useState<PersonFormState>(() => ({
     ...emptyPersonForm(),
     orgIndexCode: defaultOrg,
@@ -218,6 +222,18 @@ export default function App() {
   const [personIdAutofillNote, setPersonIdAutofillNote] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [pingLines, setPingLines] = useState<{ device: string; hik: string } | null>(null)
+
+  // DEMO states
+  const [demoTierId, setDemoTierId] = useState<DemoTierId>('aventura')
+  const [demoPresetId, setDemoPresetId] = useState(DEMO_PERSON_PRESETS[0]?.id ?? 'syscom-postman')
+  const [demoForm, setDemoForm] = useState<PersonFormState>(() =>
+    (DEMO_PERSON_PRESETS[0]?.form(defaultOrg) ?? emptyPersonForm()),
+  )
+  const [demoLog, setDemoLog] = useState<string | null>(null)
+  const [demoTx, setDemoTx] = useState<string | null>(null)
+  const [demoWb, setDemoWb] = useState<string | null>(null)
+  const [demoCreatedPersonId, setDemoCreatedPersonId] = useState<string | null>(null)
+  const [demoCreatedPersonCode, setDemoCreatedPersonCode] = useState<string | null>(null)
 
   const apiMode = getApiMode()
 
@@ -287,7 +303,21 @@ export default function App() {
           </span>
           <span className="brand-text">{appName}</span>
         </div>
-        <div className="nav" aria-label="Estado">
+        <div className="nav" aria-label="Navegación">
+          <button
+            type="button"
+            className={tab === 'tester' ? 'nav-link active' : 'nav-link'}
+            onClick={() => setTab('tester')}
+          >
+            Tester
+          </button>
+          <button
+            type="button"
+            className={tab === 'demo' ? 'nav-link active' : 'nav-link'}
+            onClick={() => setTab('demo')}
+          >
+            DEMO
+          </button>
           <span
             className={`api-mode-pill ${apiMode}`}
             title="Tras cambiar .env.local, reinicia npm run dev"
@@ -298,12 +328,249 @@ export default function App() {
       </header>
 
       <main className="main tester-main">
+        {tab === 'demo' && (
+          <section className="card demo-hero">
+            <p className="eyebrow">DEMO</p>
+            <h2 className="step-title">Simulador de compra + alta de persona</h2>
+            <p className="step-hint">
+              Esto simula una compra de nivel (sin cobro real), genera una “pulsera” y crea la persona en
+              HikCentral (si estás en modo real). Puedes alternar entre varios perfiles de usuario para probar
+              rápido.
+            </p>
+          </section>
+        )}
+
+        {tab === 'demo' && (
+          <section className="card demo-grid">
+            <div className="demo-col">
+              <h3 className="demo-subtitle">1) Perfil</h3>
+              <div className="field">
+                <label htmlFor="demoPreset">Autollenado</label>
+                <select
+                  id="demoPreset"
+                  value={demoPresetId}
+                  onChange={(e) => {
+                    const id = e.target.value
+                    setDemoPresetId(id)
+                    const preset = DEMO_PERSON_PRESETS.find((p) => p.id === id)
+                    if (preset) setDemoForm(preset.form(demoForm.orgIndexCode || defaultOrg))
+                    setDemoLog(null)
+                  }}
+                >
+                  {DEMO_PERSON_PRESETS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field-row two-col">
+                <div className="field">
+                  <label htmlFor="demoGiven">Nombre</label>
+                  <input
+                    id="demoGiven"
+                    value={demoForm.personGivenName}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, personGivenName: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="demoFamily">Apellidos</label>
+                  <input
+                    id="demoFamily"
+                    value={demoForm.personFamilyName}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, personFamilyName: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="field-row two-col">
+                <div className="field">
+                  <label htmlFor="demoCode">personCode</label>
+                  <input
+                    id="demoCode"
+                    className="mono"
+                    value={demoForm.personCode}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, personCode: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="demoOrg">orgIndexCode</label>
+                  <input
+                    id="demoOrg"
+                    className="mono"
+                    value={demoForm.orgIndexCode}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, orgIndexCode: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="field-row two-col">
+                <div className="field">
+                  <label htmlFor="demoPhone">phoneNo</label>
+                  <input
+                    id="demoPhone"
+                    value={demoForm.phoneNo}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, phoneNo: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="demoEmail">email</label>
+                  <input
+                    id="demoEmail"
+                    type="email"
+                    value={demoForm.email}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, email: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="field-row two-col">
+                <div className="field">
+                  <label htmlFor="demoCard">cardNo</label>
+                  <input
+                    id="demoCard"
+                    className="mono"
+                    value={demoForm.cardNo}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, cardNo: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="demoRemark">remark</label>
+                  <input
+                    id="demoRemark"
+                    value={demoForm.remark}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, remark: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="field-row two-col">
+                <div className="field">
+                  <label htmlFor="demoBegin">beginTime</label>
+                  <input
+                    id="demoBegin"
+                    type="datetime-local"
+                    value={demoForm.beginTime}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, beginTime: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="demoEnd">endTime</label>
+                  <input
+                    id="demoEnd"
+                    type="datetime-local"
+                    value={demoForm.endTime}
+                    onChange={(e) => setDemoForm((f) => ({ ...f, endTime: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="demo-col">
+              <h3 className="demo-subtitle">2) Nivel</h3>
+              <div className="tier-grid demo-tiers">
+                {DEMO_TIERS.map((tier) => {
+                  const active = demoTierId === tier.id
+                  return (
+                    <button
+                      key={tier.id}
+                      type="button"
+                      className={active ? 'tier-card card active' : 'tier-card card'}
+                      onClick={() => setDemoTierId(tier.id)}
+                    >
+                      <span className="tier-price">${tier.priceMXN} MXN</span>
+                      <h3>{tier.name}</h3>
+                      <p className="tier-tagline">{tier.tagline}</p>
+                      <ul className="demo-perks">
+                        {tier.perks.slice(0, 3).map((x) => (
+                          <li key={x}>{x}</li>
+                        ))}
+                      </ul>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <h3 className="demo-subtitle" style={{ marginTop: '1rem' }}>
+                3) Comprar (simulado)
+              </h3>
+              <div className="form-actions spread">
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={!!busy}
+                  onClick={() =>
+                    void run('demoBuy', async () => {
+                      setDemoLog(null)
+                      setDemoCreatedPersonId(null)
+                      setDemoCreatedPersonCode(null)
+                      setDemoTx(null)
+                      setDemoWb(null)
+
+                      // 1) Crear persona en HikCentral (real) usando el mismo endpoint
+                      const payload = buildPersonPayload(demoForm)
+                      const r = await postArtemis(HIK_ARTEMIS_PATHS.personAdd, payload)
+                      applyResultToState(r)
+                      if (!r.ok) {
+                        setDemoLog('Primero se intenta crear la persona. Falló: revisa “Última respuesta”.')
+                        return
+                      }
+                      const pid = extractPersonIdFromAddResponse(r.json)
+                      const pcode = extractPersonCodeFromAddResponse(r.json) ?? demoForm.personCode
+                      setDemoCreatedPersonId(pid)
+                      setDemoCreatedPersonCode(pcode)
+
+                      // 2) Simular compra (sin cobro real) + pulsera
+                      const tx = `TXN-${Date.now().toString(36).toUpperCase()}`
+                      const wb = `WB-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random()
+                        .toString(36)
+                        .slice(2, 6)
+                        .toUpperCase()}`
+                      setDemoTx(tx)
+                      setDemoWb(wb)
+                      setDemoLog(
+                        `Persona creada en HikCentral. Luego compra simulada OK — TXN ${tx}, pulsera ${wb}.`,
+                      )
+                    })
+                  }
+                >
+                  {busy === 'demoBuy' ? 'Procesando…' : 'Crear persona en Hik → simular compra'}
+                </button>
+              </div>
+
+              {(demoLog || demoTx || demoWb) && (
+                <div className="demo-receipt card">
+                  <p className="eyebrow">Recibo</p>
+                  <ul className="detail-list">
+                    <li>
+                      <strong>Nivel:</strong> {DEMO_TIERS.find((t) => t.id === demoTierId)?.name ?? '—'}
+                    </li>
+                    <li>
+                      <strong>Transacción:</strong> <span className="mono">{demoTx ?? '—'}</span>
+                    </li>
+                    <li>
+                      <strong>Pulsera:</strong> <span className="mono">{demoWb ?? '—'}</span>
+                    </li>
+                    <li>
+                      <strong>Persona:</strong> <span className="mono">{demoCreatedPersonId ?? '—'}</span>
+                    </li>
+                    <li>
+                      <strong>personCode:</strong> <span className="mono">{demoCreatedPersonCode ?? '—'}</span>
+                    </li>
+                  </ul>
+                  {demoLog && <p className="muted small">{demoLog}</p>}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {tab === 'tester' && (
         <p className="lede tester-lede">
           Probador basado en la colección Postman <strong>HikCentral Open API</strong>: mismas rutas{' '}
           <code className="inline-code">/artemis/api/...</code>, firma Artemis y proxy de desarrollo{' '}
           <code className="inline-code">/hikcentral-proxy</code>.
         </p>
+        )}
 
+        {tab === 'tester' && (
         <section className="card">
           <p className="eyebrow">Red</p>
           <h2 className="step-title">Conexión</h2>
@@ -334,7 +601,9 @@ export default function App() {
             </div>
           )}
         </section>
+        )}
 
+        {tab === 'tester' && (
         <section className="card">
           <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.version}</p>
           <h2 className="step-title">Versión (Open API / plataforma)</h2>
@@ -356,7 +625,9 @@ export default function App() {
             {busy === 'version' ? 'Consultando…' : 'Consultar versión'}
           </button>
         </section>
+        )}
 
+        {tab === 'tester' && (
         <section className="card env-table">
           <h2 className="step-title">Entorno</h2>
           <dl className="env-grid">
@@ -393,7 +664,9 @@ export default function App() {
             </div>
           </dl>
         </section>
+        )}
 
+        {tab === 'tester' && (
         <section className="card">
           <p className="eyebrow">Consultas POST</p>
           <h2 className="step-title">Listados</h2>
@@ -482,7 +755,9 @@ export default function App() {
             </button>
           </div>
         </section>
+        )}
 
+        {tab === 'tester' && (
         <section className="card">
           <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.personAdd}</p>
           <h2 className="step-title">Alta de persona</h2>
@@ -691,7 +966,9 @@ export default function App() {
             </button>
           </div>
         </section>
+        )}
 
+        {tab === 'tester' && (
         <section className="card">
           <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.privilegeAddPersons}</p>
           <h2 className="step-title">Asignar persona a grupo de privilegio</h2>
@@ -808,8 +1085,9 @@ export default function App() {
             </button>
           </div>
         </section>
+        )}
 
-        {(lastError || lastResult) && (
+        {tab === 'tester' && (lastError || lastResult) && (
           <section className="card tester-response">
             <h2 className="step-title">Última respuesta</h2>
             {lastError && (

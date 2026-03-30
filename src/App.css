@@ -692,3 +692,57 @@
   margin: 0.35rem 0 0;
   color: #6ee7b7;
 }
+
+.demo-hero {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: radial-gradient(
+      800px 220px at 0% 0%,
+      rgba(99, 102, 241, 0.16),
+      transparent 60%
+    ),
+    var(--surface);
+}
+
+.demo-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 1rem;
+}
+
+@media (max-width: 920px) {
+  .demo-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.demo-col {
+  min-width: 0;
+}
+
+.demo-subtitle {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  color: var(--text-h);
+}
+
+.demo-tiers .tier-card {
+  border-radius: 14px;
+}
+
+.demo-perks {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.demo-receipt {
+  margin-top: 1rem;
+  border-color: rgba(52, 211, 153, 0.3);
+  background: radial-gradient(
+      600px 220px at 20% 0%,
+      rgba(52, 211, 153, 0.12),
+      transparent 60%
+    ),
+    var(--surface);
+}
