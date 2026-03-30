@@ -18,10 +18,15 @@ function mask(s: string): string {
   return `${s.slice(0, 2)}…${s.slice(-2)}`
 }
 
-/** personCode solo dígitos (muchas instalaciones rechazan letras → "personCode parameter error"). */
+/**
+ * Código corto numérico (p. ej. Postman usa "1596", "998"). Los timestamp largos suelen provocar
+ * code 2 "personCode parameter error" por longitud o reglas del servidor.
+ */
 function randomNumericPersonCode(): string {
-  const suffix = Math.floor(1000 + Math.random() * 9000)
-  return `${Date.now()}${suffix}`.replace(/\D/g, '').slice(0, 18)
+  const t = Date.now() % 1_000_000
+  const r = Math.floor(1000 + Math.random() * 9000)
+  const s = `${t}${r}`.replace(/\D/g, '')
+  return s.slice(-9).replace(/^0+/, '') || String(1000 + r)
 }
 
 function toDatetimeLocalValue(d: Date): string {
@@ -61,17 +66,21 @@ function mergeExtraJson(base: Record<string, unknown>): Record<string, unknown> 
   if (!raw?.trim()) return base
   try {
     const extra = JSON.parse(raw) as Record<string, unknown>
-    return { ...base, ...extra }
+    /** `extra` primero; el formulario (`base`) gana — evita que un personCode erróneo en .env rompa el alta. */
+    return { ...extra, ...base }
   } catch {
     return base
   }
 }
 
 function buildPersonPayload(form: PersonFormState): Record<string, unknown> {
+  const given = form.personGivenName.trim()
+  const family = form.personFamilyName.trim()
+  const personCode = form.personCode.trim()
   const base: Record<string, unknown> = {
-    personCode: form.personCode.trim(),
-    personGivenName: form.personGivenName.trim(),
-    personFamilyName: form.personFamilyName.trim(),
+    personCode,
+    personGivenName: given,
+    personFamilyName: family,
     gender: form.gender,
     orgIndexCode: form.orgIndexCode.trim(),
     remark: form.remark.trim(),
@@ -390,9 +399,11 @@ export default function App() {
           <p className="eyebrow">POST {HIK_ARTEMIS_PATHS.personAdd}</p>
           <h2 className="step-title">Alta de persona</h2>
           <p className="step-hint">
-            Campos alineados con <strong>Agregar persona</strong> en Postman (sin foto). Usa{' '}
-            <strong>personCode solo numérico</strong> si el servidor devuelve error de parámetro. Puedes fusionar
-            JSON con <code className="inline-code">VITE_APP_HIK_PERSON_EXTRA_JSON</code>.
+            Campos alineados con <strong>Agregar persona</strong> en Postman (sin foto). El{' '}
+            <strong>personCode</strong> debe ser <strong>corto y numérico</strong> (estilo “1596”); códigos muy
+            largos suelen provocar <code className="inline-code">code 2 · personCode parameter error</code>.{' '}
+            <code className="inline-code">VITE_APP_HIK_PERSON_EXTRA_JSON</code> se fusiona antes del formulario: los
+            valores que escribes aquí tienen prioridad (así un extra no pisa el personCode).
           </p>
           <div className="tester-actions" style={{ marginBottom: '0.75rem' }}>
             <button
@@ -455,9 +466,9 @@ export default function App() {
                 value={personForm.gender}
                 onChange={(e) => setPersonForm((f) => ({ ...f, gender: Number(e.target.value) }))}
               >
-                <option value={1}>1 — habitual en muestras Postman</option>
-                <option value={2}>2</option>
                 <option value={0}>0</option>
+                <option value={1}>1 — habitual en muestras Postman</option>
+                <option value={2}>2 (si tu servidor lo acepta)</option>
               </select>
             </div>
             <div className="field">
@@ -650,10 +661,12 @@ export default function App() {
               disabled={!!busy || !lastPersonId.trim() || !lastPersonCode.trim()}
               onClick={() =>
                 void run('addPriv', async () => {
+                  const pid = lastPersonId.trim()
+                  const pcode = lastPersonCode.trim()
                   const r = await postArtemis(HIK_ARTEMIS_PATHS.privilegeAddPersons, {
                     privilegeGroupId: privilegeGroupId.trim(),
                     type: privilegeType,
-                    list: [{ id: lastPersonId.trim(), personCode: lastPersonCode.trim() }],
+                    list: [{ id: pid, personCode: pcode }],
                   })
                   applyResultToState(r)
                 })
