@@ -1,84 +1,43 @@
-# TORAM (demo) — React + TypeScript + Vite
+# TORAM demo
 
-## Arranque
+Frontend React + TypeScript + Vite para probar integraciones con HikCentral Open API (Artemis).
 
-En la carpeta del proyecto, **siempre** tras clonar o actualizar el código:
+## Que hace este proyecto
+
+La app tiene dos vistas principales:
+
+- `Tester`: prueba endpoints reales de HikCentral como version, organizaciones, personas, alta de persona y asignacion a grupos de privilegio.
+- `DEMO`: simula una compra de acceso y luego intenta crear la persona en HikCentral con ese mismo flujo.
+
+Cuando `VITE_APP_API_MODE=real`, el navegador firma cada request Artemis con `X-Ca-Key` + HMAC y, en `npm run dev`, Vite hace de proxy hacia tu servidor HikCentral para evitar problemas de CORS/certificados. Cuando `VITE_APP_API_MODE=mock`, la app responde con datos simulados y no toca la red.
+
+## Como correrlo
 
 ```bash
 npm install
 npm run dev
 ```
 
----
+El comando correcto para desarrollo es `npm run dev`.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Configuracion para Hik publico
 
-Currently, two official plugins are available:
+1. Copia `.env.example` a `.env.local` si todavia no existe.
+2. Configura estas variables con la IP o dominio publico de HikCentral:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```env
+VITE_APP_API_MODE=real
+VITE_APP_HIK_DEVICE_BASE_URL=https://TU_HOST_PUBLICO_HIK
+VITE_APP_HIKCENTRAL_BASE_URL=https://TU_HOST_PUBLICO_HIK
+VITE_APP_HIKCENTRAL_APP_KEY=...
+VITE_APP_HIKCENTRAL_APP_SECRET=...
+VITE_APP_HIK_ORG_INDEX_CODE=...
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+3. Reinicia `npm run dev` cada vez que cambies `.env.local`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Si el proxy de desarrollo debe apuntar a otro host o puerto distinto del URL publico, puedes usar `VITE_APP_HIK_PROXY_TARGET`.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Nota importante de seguridad
+
+Esta app firma Artemis desde el frontend y usa variables `VITE_*`, por lo que esos valores se incrustan en el bundle del navegador. Eso esta bien para pruebas controladas con `npm run dev`, pero no es una arquitectura segura para publicar el frontend tal cual en internet. Para un despliegue real conviene mover la firma y el proxy Artemis a un backend/BFF.

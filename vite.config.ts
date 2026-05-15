@@ -4,15 +4,24 @@ import react from '@vitejs/plugin-react'
 
 /** Prefijos que reescriben a la raíz de HikCentral (evita 502 si una petición cae en Vite sin proxy). */
 const HIK_PROXY_PREFIXES = ['/hikcentral-proxy', '/__hik', '/hik'] as const
+const DEFAULT_PROXY_TARGET = 'https://hik-public-host.invalid'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const target = (
+  const configuredTarget = (
     env.VITE_APP_HIK_PROXY_TARGET ||
     env.VITE_APP_HIKCENTRAL_BASE_URL ||
-    'http://127.0.0.1'
-  ).replace(/\/$/, '')
+    ''
+  ).trim()
+  const target = (configuredTarget || DEFAULT_PROXY_TARGET).replace(/\/$/, '')
+
+  if (!configuredTarget) {
+    console.warn(
+      '[vite] Missing VITE_APP_HIKCENTRAL_BASE_URL or VITE_APP_HIK_PROXY_TARGET. ' +
+        'Set your public HikCentral URL in .env.local before testing real connectivity.',
+    )
+  }
 
   const httpsAgent =
     target.startsWith('https:') ? new https.Agent({ rejectUnauthorized: false }) : undefined
@@ -35,6 +44,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
+      /** Permite abrir el dev server desde el móvil en la misma red: http://<IP-de-tu-PC>:5173 */
+      host: true,
       proxy,
     },
   }

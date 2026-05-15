@@ -17,18 +17,18 @@ export const DEMO_TIERS: DemoTier[] = [
     name: 'Explorador',
     tagline: 'Ideal para primera visita',
     priceMXN: 450,
-    perks: ['Acceso base', '1 atracción premium', 'Mapa digital'],
+    perks: ['Acceso base', '1 atraccion premium', 'Mapa digital'],
   },
   {
     id: 'aventura',
     name: 'Aventura',
-    tagline: 'Más emoción + preferentes',
+    tagline: 'Mas emocion + preferentes',
     priceMXN: 720,
-    perks: ['Colas rápidas', '2 experiencias premium', 'Locker incluido'],
+    perks: ['Colas rapidas', '2 experiencias premium', 'Locker incluido'],
   },
   {
     id: 'oro',
-    name: 'Oro sin límites',
+    name: 'Oro sin limites',
     tagline: 'Experiencia VIP',
     priceMXN: 1200,
     perks: ['Acceso ilimitado premium', 'Entrada anticipada', 'Estacionamiento VIP'],
@@ -79,7 +79,7 @@ export const DEMO_PERSON_PRESETS: DemoPersonPreset[] = [
   },
   {
     id: 'family-1',
-    label: 'Familia (Madre) — demo',
+    label: 'Familia (Madre) - demo',
     form: (orgFallback: string) => {
       const now = new Date()
       const end = new Date(now)
@@ -88,11 +88,11 @@ export const DEMO_PERSON_PRESETS: DemoPersonPreset[] = [
       return {
         ...emptyPersonForm(),
         personCode: randomShortNumericCode(),
-        personGivenName: 'María',
-        personFamilyName: 'Hernández',
+        personGivenName: 'Maria',
+        personFamilyName: 'Hernandez',
         gender: 2,
         orgIndexCode: orgFallback.trim() || '1',
-        remark: 'Demo TORAM — familia',
+        remark: 'Demo TORAM familia',
         phoneNo: randomMxPhone(),
         email: `maria.demo.${Date.now() % 100000}@example.com`,
         cardNo: randomCardNo(),
@@ -103,7 +103,7 @@ export const DEMO_PERSON_PRESETS: DemoPersonPreset[] = [
   },
   {
     id: 'teen-1',
-    label: 'Joven (Aventura) — demo',
+    label: 'Joven (Aventura) - demo',
     form: (orgFallback: string) => {
       const now = new Date()
       const end = new Date(now)
@@ -113,10 +113,10 @@ export const DEMO_PERSON_PRESETS: DemoPersonPreset[] = [
         ...emptyPersonForm(),
         personCode: randomShortNumericCode(),
         personGivenName: 'Diego',
-        personFamilyName: 'Ramírez',
+        personFamilyName: 'Ramirez',
         gender: 1,
         orgIndexCode: orgFallback.trim() || '1',
-        remark: 'Demo TORAM — aventura',
+        remark: 'Demo TORAM aventura',
         phoneNo: randomMxPhone(),
         email: `diego.demo.${Date.now() % 100000}@example.com`,
         cardNo: randomCardNo(),
@@ -127,7 +127,7 @@ export const DEMO_PERSON_PRESETS: DemoPersonPreset[] = [
   },
   {
     id: 'vip-1',
-    label: 'VIP (Oro) — demo',
+    label: 'VIP (Oro) - demo',
     form: (orgFallback: string) => {
       const now = new Date()
       const end = new Date(now)
@@ -139,7 +139,7 @@ export const DEMO_PERSON_PRESETS: DemoPersonPreset[] = [
         personFamilyName: 'Alvizo',
         gender: 1,
         orgIndexCode: orgFallback.trim() || '1',
-        remark: 'Demo TORAM — VIP',
+        remark: 'Demo TORAM VIP',
         phoneNo: randomMxPhone(),
         email: `rafa.vip.${Date.now() % 100000}@example.com`,
         cardNo: randomCardNo(),
@@ -149,4 +149,3 @@ export const DEMO_PERSON_PRESETS: DemoPersonPreset[] = [
     },
   },
 ]
-

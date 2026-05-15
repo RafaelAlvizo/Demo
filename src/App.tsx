@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   extractPersonCodeFromAddResponse,
   extractPersonIdFromAddResponse,
@@ -19,6 +19,7 @@ import { emptyPersonForm, type PersonFormState } from './types'
 import './App.css'
 
 const appName = import.meta.env.VITE_APP_NAME ?? 'HikCentral API tester'
+const FACE_MAX_DIMENSION = 1080
 
 type AppTab = 'tester' | 'demo'
 
@@ -128,13 +129,73 @@ function buildDemoPersonForm(orgFallback: string): PersonFormState {
     personFamilyName: last,
     gender: 1,
     orgIndexCode: orgFallback.trim() || '1',
-    remark: `Alta demo ${now.toLocaleString('es-MX')}`,
+    // HikCentral can be picky with free-text description fields; keep demo remarks short and ASCII-safe.
+    remark: `Alta demo ${idSuffix}`,
     phoneNo: phone,
     email: `demo.${last.toLowerCase()}.${Date.now() % 100000}@example.com`,
     cardNo: card,
     beginTime: toDatetimeLocalValue(now),
     endTime: toDatetimeLocalValue(end),
   }
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+        return
+      }
+      reject(new Error('No se pudo leer la imagen.'))
+    }
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('La imagen no es valida o no se pudo abrir.'))
+    img.src = src
+  })
+}
+
+async function convertFaceFileToJpegBase64(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Selecciona una imagen valida para el rostro.')
+  }
+
+  const rawDataUrl = await readFileAsDataUrl(file)
+  const image = await loadImageElement(rawDataUrl)
+  const maxSide = Math.max(image.naturalWidth || 0, image.naturalHeight || 0)
+  if (!maxSide) {
+    throw new Error('La imagen no tiene dimensiones validas.')
+  }
+
+  const scale = Math.min(1, FACE_MAX_DIMENSION / maxSide)
+  const width = Math.max(1, Math.round(image.naturalWidth * scale))
+  const height = Math.max(1, Math.round(image.naturalHeight * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    throw new Error('No se pudo preparar la conversion de la imagen.')
+  }
+
+  ctx.drawImage(image, 0, 0, width, height)
+  const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.92)
+  const base64 = jpegDataUrl.split(',', 2)[1]?.trim() ?? ''
+  if (!base64) {
+    throw new Error('No se pudo convertir la imagen a JPEG base64.')
+  }
+
+  return base64
 }
 
 function mergeExtraJson(base: Record<string, unknown>): Record<string, unknown> {
@@ -180,6 +241,9 @@ function buildPersonPayload(form: PersonFormState): Record<string, unknown> {
   if (import.meta.env.VITE_APP_HIK_OMIT_PERSON_NAME !== 'true') {
     base.personName = `${given} ${family}`.trim()
   }
+  if (form.faceJpegBase64.trim()) {
+    base.faces = [{ faceData: form.faceJpegBase64.trim() }]
+  }
   return mergeExtraJson(base)
 }
 
@@ -191,8 +255,21 @@ function prettyJson(v: unknown): string {
   }
 }
 
+function isLoopbackBaseUrl(raw: string): boolean {
+  const value = raw.trim()
+  if (!value) return false
+  try {
+    const { hostname } = new URL(value)
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+  } catch {
+    return /^(https?:\/\/)?(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?$/i.test(value)
+  }
+}
+
 export default function App() {
   const defaultOrg = import.meta.env.VITE_APP_HIK_ORG_INDEX_CODE ?? ''
+  const testerFaceInputRef = useRef<HTMLInputElement | null>(null)
+  const demoFaceInputRef = useRef<HTMLInputElement | null>(null)
   const [tab, setTab] = useState<AppTab>('tester')
   const [personForm, setPersonForm] = useState<PersonFormState>(() => ({
     ...emptyPersonForm(),
@@ -249,6 +326,8 @@ export default function App() {
     }),
     [],
   )
+  const usingLoopbackBase =
+    isLoopbackBaseUrl(envBlock.deviceBase) || isLoopbackBaseUrl(envBlock.hikBase)
 
   const run = useCallback(
     async (label: string, fn: () => Promise<void>) => {
@@ -293,6 +372,46 @@ export default function App() {
     )
     setLastError(null)
   }
+
+  const applyFaceToForm = useCallback(
+    async (target: 'tester' | 'demo', file: File | null) => {
+      if (!file) return
+
+      const base64 = await convertFaceFileToJpegBase64(file)
+      const apply = (current: PersonFormState): PersonFormState => ({
+        ...current,
+        faceJpegBase64: base64,
+        faceFileName: file.name,
+      })
+
+      if (target === 'tester') {
+        setPersonForm(apply)
+        setLastError(null)
+        return
+      }
+
+      setDemoForm(apply)
+      setDemoLog(null)
+      setLastError(null)
+    },
+    [],
+  )
+
+  const clearFaceFromForm = useCallback((target: 'tester' | 'demo') => {
+    const apply = (current: PersonFormState): PersonFormState => ({
+      ...current,
+      faceJpegBase64: '',
+      faceFileName: '',
+    })
+
+    if (target === 'tester') {
+      setPersonForm(apply)
+      return
+    }
+
+    setDemoForm(apply)
+    setDemoLog(null)
+  }, [])
 
   return (
     <div className={tab === 'demo' ? 'app demo-theme' : 'app'}>
@@ -461,6 +580,58 @@ export default function App() {
                   />
                 </div>
               </div>
+              <div className="field">
+                <label htmlFor="demoFaceButton">Foto facial (opcional)</label>
+                <input
+                  ref={demoFaceInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="user"
+                  className="sr-only-input"
+                  tabIndex={-1}
+                  aria-hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null
+                    e.target.value = ''
+                    void run('demoFace', async () => {
+                      await applyFaceToForm('demo', file)
+                    })
+                  }}
+                />
+                <button
+                  id="demoFaceButton"
+                  type="button"
+                  className="btn ghost"
+                  disabled={!!busy}
+                  onClick={() => demoFaceInputRef.current?.click()}
+                >
+                  {demoForm.faceJpegBase64 ? 'Tomar otra foto' : 'Tomar foto'}
+                </button>
+                <p className="muted small">
+                  En moviles compatibles abre la camara frontal y envia la imagen como{' '}
+                  <code className="inline-code">faces[0].faceData</code>.
+                </p>
+              </div>
+              {demoForm.faceJpegBase64 && (
+                <div className="face-upload-panel">
+                  <img
+                    className="face-preview"
+                    src={`data:image/jpeg;base64,${demoForm.faceJpegBase64}`}
+                    alt="Preview del rostro demo"
+                  />
+                  <div className="face-meta">
+                    <strong>{demoForm.faceFileName || 'Foto cargada'}</strong>
+                    <span className="muted small">Lista para alta de persona con rostro en HikCentral.</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => clearFaceFromForm('demo')}
+                  >
+                    Quitar foto
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="demo-col">
@@ -566,7 +737,8 @@ export default function App() {
         <p className="lede tester-lede">
           Probador basado en la colección Postman <strong>HikCentral Open API</strong>: mismas rutas{' '}
           <code className="inline-code">/artemis/api/...</code>, firma Artemis y proxy de desarrollo{' '}
-          <code className="inline-code">/hikcentral-proxy</code>.
+          <code className="inline-code">/hikcentral-proxy</code> para conectar desde cualquier equipo con alcance
+          al host publico de HikCentral.
         </p>
         )}
 
@@ -578,6 +750,15 @@ export default function App() {
             Con <code className="inline-code">VITE_APP_API_MODE=real</code> las peticiones van firmadas a
             HikCentral. En modo <code className="inline-code">mock</code> se simulan respuestas sin red.
           </p>
+          {apiMode === 'real' && usingLoopbackBase && (
+            <p className="muted small">
+              Ahora mismo el entorno sigue apuntando a <code className="inline-code">127.0.0.1</code> o{' '}
+              <code className="inline-code">localhost</code>. Cambia{' '}
+              <code className="inline-code">VITE_APP_HIK_DEVICE_BASE_URL</code> y{' '}
+              <code className="inline-code">VITE_APP_HIKCENTRAL_BASE_URL</code> a la IP o dominio publico de
+              HikCentral y reinicia <code className="inline-code">npm run dev</code>.
+            </p>
+          )}
           <button
             type="button"
             className="btn primary"
@@ -921,6 +1102,58 @@ export default function App() {
               onChange={(e) => setPersonForm((f) => ({ ...f, endTime: e.target.value }))}
             />
           </div>
+          <div className="field">
+            <label htmlFor="personFaceButton">Foto facial (opcional)</label>
+            <input
+              ref={testerFaceInputRef}
+              type="file"
+              accept="image/*"
+              capture="user"
+              className="sr-only-input"
+              tabIndex={-1}
+              aria-hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null
+                e.target.value = ''
+                void run('personFace', async () => {
+                  await applyFaceToForm('tester', file)
+                })
+              }}
+            />
+            <button
+              id="personFaceButton"
+              type="button"
+              className="btn ghost"
+              disabled={!!busy}
+              onClick={() => testerFaceInputRef.current?.click()}
+            >
+              {personForm.faceJpegBase64 ? 'Tomar otra foto' : 'Tomar foto'}
+            </button>
+            <p className="muted small" style={{ marginTop: '0.35rem' }}>
+              En moviles compatibles abre la camara frontal y envia la imagen como{' '}
+              <code className="inline-code">faces[0].faceData</code> en el mismo alta.
+            </p>
+          </div>
+          {personForm.faceJpegBase64 && (
+            <div className="face-upload-panel">
+              <img
+                className="face-preview"
+                src={`data:image/jpeg;base64,${personForm.faceJpegBase64}`}
+                alt="Preview del rostro"
+              />
+              <div className="face-meta">
+                <strong>{personForm.faceFileName || 'Foto cargada'}</strong>
+                <span className="muted small">Se enviara junto con la persona a HikCentral.</span>
+              </div>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => clearFaceFromForm('tester')}
+              >
+                Quitar foto
+              </button>
+            </div>
+          )}
           <div className="form-actions">
             <button
               type="button"
@@ -1101,7 +1334,7 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        <p>HikCentral Open API — probador local. No almacena credenciales fuera de .env.local.</p>
+        <p>HikCentral Open API — probador web. En desarrollo, las credenciales se leen desde .env.local.</p>
       </footer>
     </div>
   )

@@ -12,6 +12,8 @@ export interface PersonFormState {
   cardNo: string
   beginTime: string
   endTime: string
+  faceJpegBase64: string
+  faceFileName: string
 }
 
 export const emptyPersonForm = (): PersonFormState => ({
@@ -26,4 +28,6 @@ export const emptyPersonForm = (): PersonFormState => ({
   cardNo: '',
   beginTime: '',
   endTime: '',
+  faceJpegBase64: '',
+  faceFileName: '',
 })

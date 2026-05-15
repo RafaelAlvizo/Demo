@@ -1,47 +1,55 @@
-# TORAM ↔ HikCentral (cómo conecta el código)
+# TORAM -> HikCentral (como conecta el codigo)
 
-## Qué hace la app (flujo técnico)
+## Que hace la app
 
-1. **Navegador** (p. ej. `http://localhost:5173`): el front solo llama a rutas **relativas** en modo desarrollo:  
-   `POST /hikcentral-proxy/artemis/api/resource/v1/person/single/add`
-2. **Vite (`vite.config.ts`)** recibe eso y hace de **proxy** hacia  
-   `VITE_APP_HIK_PROXY_TARGET` o `VITE_APP_HIKCENTRAL_BASE_URL`, quitando el prefijo `/hikcentral-proxy`.  
-   Ejemplo: `https://127.0.0.1/artemis/api/resource/v1/person/single/add`
-3. Eso evita **CORS** en desarrollo. **Solo existe con `npm run dev`**.
-4. **Prueba “Probar conexiones”** (`runConnectionTests`): en dev, si la URL a pinguear es **la misma** base que `VITE_APP_HIK_PROXY_TARGET` o `VITE_APP_HIKCENTRAL_BASE_URL`, el GET va por `/hikcentral-proxy/` (no directo al `https://127.0.0.1`), para no chocar con **certificado autofirmado** ni bloqueos del navegador (“Failed to fetch”).
-5. **Autenticación Artemis** (`src/api/artemisAuth.ts`): HikCentral OpenAPI espera cabeceras **X-Ca-Key**, **X-Ca-Signature** (HMAC-SHA256), **Content-MD5**, **X-Ca-Timestamp**, **X-Ca-Nonce**, no `X-App-Key` plano. Las variables `VITE_APP_HIKCENTRAL_APP_KEY` / `SECRET` son ese par de Artemis.
+Este proyecto es un probador web para HikCentral Open API (Artemis):
 
-## Mismo ordenador: VS Code + HikCentral local
+1. Consulta version, organizaciones, personas y grupos de privilegio.
+2. Crea personas en HikCentral con el endpoint `/artemis/api/resource/v1/person/single/add`.
+3. Puede asignar la persona creada a un grupo de privilegio.
+4. Incluye una vista `DEMO` que simula una compra y luego dispara el alta de persona.
 
-- `VITE_APP_HIKCENTRAL_BASE_URL` = exactamente cómo abres el cliente web (p. ej. `https://127.0.0.1` o con puerto `https://127.0.0.1:7443`).
-- Tras cambiar `.env.local`: **parar y volver a ejecutar** `npm run dev`.
-- Comprueba en la cabecera de la app la pastilla **API: real**.
+## Flujo tecnico actual
 
-## Sobre el error **502 Bad Gateway**
+1. El navegador firma requests Artemis con `X-Ca-Key`, `X-Ca-Signature`, `X-Ca-Nonce` y `X-Ca-Timestamp`.
+2. En `npm run dev`, el frontend llama rutas relativas como `POST /hikcentral-proxy/artemis/api/resource/v1/person/single/add`.
+3. Vite (`vite.config.ts`) hace de proxy hacia `VITE_APP_HIK_PROXY_TARGET` o `VITE_APP_HIKCENTRAL_BASE_URL` y elimina el prefijo `/hikcentral-proxy`.
+4. Eso evita CORS y tambien ayuda con certificados autofirmados durante desarrollo.
+5. La prueba `Probar conexiones` reutiliza ese proxy cuando el host objetivo coincide con el destino configurado.
 
-Suele ser respuesta **nginx** del propio HikCentral: el proxy de Vite **sí llega** a tu servidor, pero el *upstream* interno (servicio Artemis/OpenAPI) no responde bien. Causas típicas:
+## Soporte para Hik con IP publica
 
-- Módulo **OpenAPI / integración de terceros** no instalado o no licenciado.
-- **Ruta distinta** en tu versión: ajusta `VITE_APP_HIK_ENDPOINT_PERSON_ADD` según el PDF oficial de **tu** versión.
-- **Puerto o protocolo** incorrectos en `VITE_APP_HIKCENTRAL_BASE_URL` (probar con el mismo host/puerto que en el navegador).
+El proyecto ya puede trabajar con un HikCentral publico siempre que el equipo donde corres `npm run dev` tenga alcance a ese host.
 
-**Comprobar fuera de la app (misma máquina):** abre en el navegador o prueba con `curl` la misma base que en `.env.local`. Si `https://127.0.0.1/artemis/...` no existe o da 502 sin TORAM, el problema es el servidor HikCentral, no el demo.
+Configura en `.env.local`:
 
-Tras el cambio a firma Artemis, si había **401/403** por auth, debería mejorar; el **502** puro sigue siendo sobre todo **URL/servicio** en el servidor.
+```env
+VITE_APP_API_MODE=real
+VITE_APP_HIK_DEVICE_BASE_URL=https://TU_IP_O_DOMINIO_PUBLICO
+VITE_APP_HIKCENTRAL_BASE_URL=https://TU_IP_O_DOMINIO_PUBLICO
+VITE_APP_HIKCENTRAL_APP_KEY=...
+VITE_APP_HIKCENTRAL_APP_SECRET=...
+VITE_APP_HIK_ORG_INDEX_CODE=...
+```
 
-## PDFs que compartiste
+Despues reinicia `npm run dev`.
 
-- **MinMoe / eventos HTTP**: habla de **ISAPI en el terminal** (puerta), no del endpoint `/artemis` de HikCentral. Es otro tipo de integración.
-- **Desarrollar aplicaciones HIKVISION**: menciona **Hik-Central OpenAPI**; la documentación detallada de rutas y firma suele estar en **https://tpp.hikvision.com** (registro) o en el paquete/PDF que acompaña a **HikCentral Professional** para tu versión.
+## Que sigue siendo solo de desarrollo
 
-## Variables imprescindibles en `.env.local` (modo real)
+El proxy `/hikcentral-proxy` existe solo mientras Vite esta corriendo. Si algun dia quieren publicar esta app para que otros usuarios la abran directamente desde internet, hace falta un backend o BFF que:
 
-| Variable | Uso |
-|----------|-----|
-| `VITE_APP_API_MODE` | `real` |
-| `VITE_APP_HIKCENTRAL_BASE_URL` | Base del servidor (ej. `https://127.0.0.1`) |
-| `VITE_APP_HIKCENTRAL_APP_KEY` / `SECRET` | Pareja Artemis (OpenAPI) |
-| `VITE_APP_HIK_ORG_INDEX_CODE` | Índice del departamento (p. ej. Visitas) |
-| `VITE_APP_HIK_ACCESS_*` | Opcional: índices de nivel de acceso para el segundo POST |
+- reciba la peticion del frontend,
+- firme Artemis del lado servidor,
+- y reenvie a HikCentral.
 
-Opcional: `VITE_APP_HIK_PROXY_TARGET` si el destino del proxy Node debe ser distinto.
+De lo contrario, el `APP_SECRET` quedaria expuesto en el bundle del navegador porque aqui se usa `import.meta.env.VITE_*`.
+
+## Sobre el error 502
+
+Cuando aparece `502 Bad Gateway`, normalmente el proxy si llega a HikCentral pero el servicio interno de OpenAPI/Artemis no responde bien. Las causas mas probables son:
+
+- OpenAPI / integracion de terceros no habilitado o sin licencia.
+- Ruta distinta en la version instalada de HikCentral.
+- Host, puerto o protocolo incorrectos en `VITE_APP_HIKCENTRAL_BASE_URL`.
+
+Si `https://TU_HOST_PUBLICO/artemis/...` ya falla fuera de TORAM, el problema esta en HikCentral y no en este frontend.

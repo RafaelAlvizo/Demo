@@ -12,7 +12,7 @@ function devProxyTargetBase(): string {
   return normalizeBaseUrl(raw)
 }
 
-/** En dev, GET directo a https://127.0.0.1 suele fallar (cert/CORS); el proxy de Vite no. */
+/** En dev, GET directo al host de HikCentral puede fallar por cert/CORS; el proxy de Vite no. */
 function shouldPingViaDevProxy(url: string): boolean {
   if (!import.meta.env.DEV) return false
   const base = normalizeBaseUrl(url)
