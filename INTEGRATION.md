@@ -34,15 +34,28 @@ VITE_APP_HIK_ORG_INDEX_CODE=...
 
 Despues reinicia `npm run dev`.
 
-## Que sigue siendo solo de desarrollo
+## Produccion / Vercel
 
-El proxy `/hikcentral-proxy` existe solo mientras Vite esta corriendo. Si algun dia quieren publicar esta app para que otros usuarios la abran directamente desde internet, hace falta un backend o BFF que:
+Para despliegue publico, la app usa la Function same-origin `/api/hik-proxy`.
 
-- reciba la peticion del frontend,
-- firme Artemis del lado servidor,
-- y reenvie a HikCentral.
+Ese backend:
 
-De lo contrario, el `APP_SECRET` quedaria expuesto en el bundle del navegador porque aqui se usa `import.meta.env.VITE_*`.
+- recibe la peticion del frontend,
+- firma Artemis del lado servidor,
+- reenvia a HikCentral,
+- y devuelve la respuesta a la UI.
+
+Variables recomendadas en Vercel:
+
+```env
+HIKCENTRAL_BASE_URL=https://TU_HOST_PUBLICO_HIK
+HIKCENTRAL_APP_KEY=...
+HIKCENTRAL_APP_SECRET=...
+VITE_APP_API_MODE=real
+```
+
+El proxy `/hikcentral-proxy` sigue existiendo solo para `npm run dev`. En produccion ya no hace falta
+exponer `APP_SECRET` al navegador.
 
 ## Sobre el error 502
 

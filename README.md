@@ -38,6 +38,24 @@ VITE_APP_HIK_ORG_INDEX_CODE=...
 
 Si el proxy de desarrollo debe apuntar a otro host o puerto distinto del URL publico, puedes usar `VITE_APP_HIK_PROXY_TARGET`.
 
+## Produccion en Vercel
+
+En produccion la app ya no llama HikCentral directo desde el navegador. Usa la Function same-origin
+`/api/hik-proxy`, que firma Artemis del lado servidor y reenvia la peticion a HikCentral.
+
+Configura estas variables en Vercel:
+
+```env
+HIKCENTRAL_BASE_URL=https://TU_HOST_PUBLICO_HIK
+HIKCENTRAL_APP_KEY=...
+HIKCENTRAL_APP_SECRET=...
+VITE_APP_API_MODE=real
+```
+
+Los `VITE_*` siguen siendo utiles para desarrollo local con `npm run dev`, pero en produccion conviene
+dejar la firma y el secreto solo en variables de servidor.
+
 ## Nota importante de seguridad
 
-Esta app firma Artemis desde el frontend y usa variables `VITE_*`, por lo que esos valores se incrustan en el bundle del navegador. Eso esta bien para pruebas controladas con `npm run dev`, pero no es una arquitectura segura para publicar el frontend tal cual en internet. Para un despliegue real conviene mover la firma y el proxy Artemis a un backend/BFF.
+Para pruebas locales, esta app todavia puede firmar Artemis desde el frontend cuando corres `npm run dev`.
+Para despliegue publico, usa la Function backend y evita exponer `APP_SECRET` en el bundle del navegador.

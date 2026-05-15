@@ -131,10 +131,19 @@ export async function postArtemis(path: string, body: Record<string, unknown>): 
     return { ok: true, status: 200, json, text: JSON.stringify(json) }
   }
 
-  const appKey = import.meta.env.VITE_APP_HIKCENTRAL_APP_KEY ?? ''
-  const appSecret = import.meta.env.VITE_APP_HIKCENTRAL_APP_SECRET ?? ''
-  const headers = await buildArtemisHeaders('POST', path, bodyStr, appKey, appSecret)
   const url = hikEndpoint(path)
+  const headers = import.meta.env.DEV
+    ? await buildArtemisHeaders(
+        'POST',
+        path,
+        bodyStr,
+        import.meta.env.VITE_APP_HIKCENTRAL_APP_KEY ?? '',
+        import.meta.env.VITE_APP_HIKCENTRAL_APP_SECRET ?? '',
+      )
+    : {
+        Accept: '*/*',
+        'Content-Type': 'application/json',
+      }
 
   let res: Response
   try {
