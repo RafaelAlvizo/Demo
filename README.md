@@ -49,11 +49,15 @@ Configura estas variables en Vercel:
 HIKCENTRAL_BASE_URL=https://TU_HOST_PUBLICO_HIK
 HIKCENTRAL_APP_KEY=...
 HIKCENTRAL_APP_SECRET=...
+HIKCENTRAL_ALLOW_INSECURE_TLS=false
 VITE_APP_API_MODE=real
 ```
 
 Los `VITE_*` siguen siendo utiles para desarrollo local con `npm run dev`, pero en produccion conviene
 dejar la firma y el secreto solo en variables de servidor.
+
+Si el proxy devuelve `code: "proxy_error"` con mensaje relacionado a TLS/certificado, y tu HikCentral usa
+certificado autofirmado, puedes probar temporalmente `HIKCENTRAL_ALLOW_INSECURE_TLS=true`.
 
 ## Nota importante de seguridad
 

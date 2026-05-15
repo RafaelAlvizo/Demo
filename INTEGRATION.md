@@ -51,11 +51,15 @@ Variables recomendadas en Vercel:
 HIKCENTRAL_BASE_URL=https://TU_HOST_PUBLICO_HIK
 HIKCENTRAL_APP_KEY=...
 HIKCENTRAL_APP_SECRET=...
+HIKCENTRAL_ALLOW_INSECURE_TLS=false
 VITE_APP_API_MODE=real
 ```
 
 El proxy `/hikcentral-proxy` sigue existiendo solo para `npm run dev`. En produccion ya no hace falta
 exponer `APP_SECRET` al navegador.
+
+Si la Function responde `proxy_error` y el motivo apunta a TLS/certificado, pueden probar temporalmente
+`HIKCENTRAL_ALLOW_INSECURE_TLS=true` mientras validan el certificado del host HikCentral.
 
 ## Sobre el error 502
 

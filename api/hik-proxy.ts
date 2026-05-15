@@ -1,4 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto'
+import http from 'node:http'
+import https from 'node:https'
 
 const ACCEPT = '*/*'
 const CONTENT_TYPE = 'application/json'
@@ -14,6 +16,11 @@ function getRequiredEnv(primary: string, fallback?: string): string {
 
 function normalizeBaseUrl(raw: string): string {
   return raw.replace(/\/$/, '')
+}
+
+function isTruthyEnv(raw: string | undefined): boolean {
+  const value = (raw ?? '').trim().toLowerCase()
+  return value === '1' || value === 'true' || value === 'yes'
 }
 
 function normalizeArtemisPath(raw: string | null): string {
@@ -57,6 +64,49 @@ function jsonResponse(body: Record<string, unknown>, status: number): Response {
   return Response.json(body, { status })
 }
 
+type UpstreamResult = {
+  status: number
+  headers: http.IncomingHttpHeaders
+  text: string
+}
+
+function postToUpstream(
+  upstreamUrl: URL,
+  headers: Record<string, string>,
+  body: string,
+  allowInsecureTls: boolean,
+): Promise<UpstreamResult> {
+  return new Promise((resolve, reject) => {
+    const transport = upstreamUrl.protocol === 'https:' ? https : http
+    const req = transport.request(
+      upstreamUrl,
+      {
+        method: 'POST',
+        headers,
+        rejectUnauthorized: upstreamUrl.protocol === 'https:' ? !allowInsecureTls : undefined,
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)))
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode ?? 502,
+            headers: res.headers,
+            text: Buffer.concat(chunks).toString('utf8'),
+          })
+        })
+      },
+    )
+
+    req.setTimeout(120_000, () => {
+      req.destroy(new Error('Upstream timeout after 120000ms'))
+    })
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
 export default {
   async fetch(request: Request): Promise<Response> {
     if (request.method !== 'POST') {
@@ -74,25 +124,39 @@ export default {
       )
       const appKey = getRequiredEnv('HIKCENTRAL_APP_KEY', 'VITE_APP_HIKCENTRAL_APP_KEY')
       const appSecret = getRequiredEnv('HIKCENTRAL_APP_SECRET', 'VITE_APP_HIKCENTRAL_APP_SECRET')
+      const allowInsecureTls = isTruthyEnv(
+        process.env.HIKCENTRAL_ALLOW_INSECURE_TLS ?? process.env.VITE_APP_HIKCENTRAL_ALLOW_INSECURE_TLS,
+      )
       const body = await request.text()
       const headers = buildArtemisHeaders(path, body, appKey, appSecret)
-      const upstream = await fetch(`${upstreamBase}${path}`, {
-        method: 'POST',
-        headers,
-        body,
-      })
-      const text = await upstream.text()
+      const upstreamUrl = new URL(`${upstreamBase}${path}`)
+      const upstream = await postToUpstream(upstreamUrl, headers, body, allowInsecureTls)
 
-      return new Response(text, {
+      return new Response(upstream.text, {
         status: upstream.status,
         headers: {
-          'content-type': upstream.headers.get('content-type') ?? 'application/json; charset=utf-8',
+          'content-type':
+            typeof upstream.headers['content-type'] === 'string'
+              ? upstream.headers['content-type']
+              : 'application/json; charset=utf-8',
           'cache-control': 'no-store',
         },
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown proxy error'
-      return jsonResponse({ code: 'proxy_error', message }, 500)
+      const err = error instanceof Error ? error : new Error('Unknown proxy error')
+      const cause =
+        typeof err.cause === 'object' && err.cause && 'message' in err.cause
+          ? String((err.cause as { message?: unknown }).message ?? '')
+          : undefined
+      return jsonResponse(
+        {
+          code: 'proxy_error',
+          message: err.message,
+          cause,
+          stack: process.env.NODE_ENV === 'production' ? undefined : err.stack,
+        },
+        500,
+      )
     }
   },
 }
